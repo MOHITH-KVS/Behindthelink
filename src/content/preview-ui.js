@@ -228,6 +228,10 @@
 
     // ── Details Block ──
     if (!isLoading) {
+      if (payload.safetyEvidence) {
+        cardElement.appendChild(renderSafetySection(payload.safetyEvidence));
+      }
+
       var detailsWrapper = document.createElement('details');
       detailsWrapper.className = 'btl-details';
       detailsWrapper.style.pointerEvents = 'auto'; 
@@ -256,6 +260,131 @@
     } else {
       cardElement.style.pointerEvents = 'none';
     }
+  }
+
+  function renderSafetySection(safetyEvidence) {
+    var section = document.createElement('div');
+    section.className = 'btl-section btl-safety-section';
+
+    var label = document.createElement('div');
+    label.className = 'btl-label';
+    label.textContent = 'SAFETY';
+    section.appendChild(label);
+
+    var statusEl = document.createElement('div');
+    statusEl.className = 'btl-safety-status';
+
+    var iconEl = document.createElement('span');
+    var textEl = document.createElement('span');
+    
+    var isExpanded = false;
+
+    switch (safetyEvidence.status) {
+      case 'NO_SIGNALS_DETECTED':
+        iconEl.textContent = '—';
+        iconEl.style.color = '#6b7280';
+        textEl.textContent = 'Nothing unusual found';
+        textEl.style.color = '#6b7280';
+        break;
+      case 'INFORMATIONAL':
+        iconEl.textContent = 'ℹ';
+        iconEl.style.color = '#64748b';
+        textEl.textContent = 'Some things to know';
+        textEl.style.color = '#64748b';
+        break;
+      case 'UNUSUAL_CHARACTERISTICS':
+        iconEl.textContent = '⚠';
+        iconEl.style.color = '#d97706';
+        textEl.textContent = 'Some unusual characteristics';
+        textEl.style.color = '#d97706';
+        isExpanded = true;
+        break;
+      case 'STRONG_WARNING':
+        iconEl.textContent = '🚨';
+        iconEl.style.color = '#dc2626';
+        textEl.textContent = 'Known threat reported';
+        textEl.style.color = '#dc2626';
+        isExpanded = true;
+        break;
+    }
+
+    statusEl.appendChild(iconEl);
+    statusEl.appendChild(textEl);
+    section.appendChild(statusEl);
+
+    var whyPanel = renderWhyPanel(safetyEvidence.signals, safetyEvidence.assessmentBasis, safetyEvidence.limitations);
+    if (isExpanded) {
+      whyPanel.setAttribute('open', 'true');
+    }
+    section.appendChild(whyPanel);
+
+    return section;
+  }
+
+  function renderWhyPanel(signals, assessmentBasis, limitations) {
+    var details = document.createElement('details');
+    details.className = 'btl-why-panel';
+    
+    var summary = document.createElement('summary');
+    summary.className = 'btl-why-summary';
+    summary.textContent = 'Why? ▾';
+    
+    // Add logic to toggle the arrow if needed, but standard <details> handles clicking.
+    details.addEventListener('toggle', function() {
+      summary.textContent = details.open ? 'Why? ▴' : 'Why? ▾';
+    });
+
+    details.appendChild(summary);
+
+    var content = document.createElement('div');
+    content.className = 'btl-why-content';
+    
+    var ul = document.createElement('ul');
+    ul.className = 'btl-why-ul';
+
+    // Group signals by Tier
+    var tierB = signals.filter(function(s) { return s.tier === 'B'; });
+    var tierA = signals.filter(function(s) { return s.tier === 'A'; });
+    var tierD = signals.filter(function(s) { return s.tier === 'D'; });
+
+    var allSigs = [].concat(tierD).concat(tierB).concat(tierA);
+    allSigs.forEach(function(sig) {
+      var li = document.createElement('li');
+      li.className = 'btl-why-li';
+      li.textContent = sig.detail;
+      ul.appendChild(li);
+    });
+
+    // Evidence basis statement
+    var basisStr = '';
+    if (assessmentBasis === 'LOCAL_WITH_NETWORK_AND_OBSERVATION') {
+      basisStr = 'Destination verified via network and prior observation';
+    } else if (assessmentBasis === 'LOCAL_WITH_NETWORK') {
+      basisStr = 'Destination verified via network';
+    } else if (assessmentBasis === 'LOCAL_WITH_OBSERVATION') {
+      basisStr = 'Destination was previously observed — Chrome navigated here from this link';
+    } else if (assessmentBasis === 'INCOMPLETE') {
+      // Handled in limitations or we can skip adding a separate line if limitations has it.
+    }
+
+    if (basisStr) {
+      var liBasis = document.createElement('li');
+      liBasis.className = 'btl-why-li';
+      liBasis.textContent = basisStr;
+      ul.appendChild(liBasis);
+    }
+
+    limitations.forEach(function(lim) {
+      var liLim = document.createElement('li');
+      liLim.className = 'btl-why-li';
+      liLim.textContent = lim;
+      ul.appendChild(liLim);
+    });
+
+    content.appendChild(ul);
+    details.appendChild(content);
+
+    return details;
   }
 
   function createSignalItem(text) {
@@ -314,7 +443,7 @@
   }
 
   function getStyles() {
-    var w = BTL.CARD_WIDTH;
+    var w = BTL.CARD_WIDTH || 320;
     var dur = BTL.ANIMATION_DURATION;
 
     return (
@@ -440,6 +569,26 @@
 
       '.btl-detail-value{' +
         'word-break:break-all;' +
+      '}' +
+      
+      '.btl-safety-status {' +
+        'font-size:14px; font-weight:500; margin-bottom:4px; display:flex; align-items:center; gap:6px;' +
+      '}' +
+      
+      '.btl-why-panel {' +
+        'margin-top:2px; font-size:12px; color:#4b5563;' +
+      '}' +
+      
+      '.btl-why-summary {' +
+        'cursor:pointer; font-weight:500; user-select:none; color:#6b7280; font-size:11px;' +
+      '}' +
+      
+      '.btl-why-ul {' +
+        'margin-top:8px; margin-bottom:0; padding-left:16px; border-top:1px solid #f3f4f6; padding-top:8px;' +
+      '}' +
+      
+      '.btl-why-li {' +
+        'margin-bottom:4px;' +
       '}'
     );
   }

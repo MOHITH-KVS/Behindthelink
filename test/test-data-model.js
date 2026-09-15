@@ -55,12 +55,14 @@ const shortenerCode = fs.readFileSync('./src/content/shortener-registry.js', 'ut
 const trackingCode = fs.readFileSync('./src/content/tracking-registry.js', 'utf8');
 const affiliateCode = fs.readFileSync('./src/content/affiliate-registry.js', 'utf8');
 const analyzerCode = fs.readFileSync('./src/content/url-analyzer.js', 'utf8');
+const safetyAnalyzerCode = fs.readFileSync('./src/shared/safety-analyzer.js', 'utf8');
 const serviceWorkerCode = fs.readFileSync('./src/background/service-worker.js', 'utf8');
 
 vm.runInContext(shortenerCode, sandbox);
 vm.runInContext(trackingCode, sandbox);
 vm.runInContext(affiliateCode, sandbox);
 vm.runInContext(analyzerCode, sandbox);
+vm.runInContext(safetyAnalyzerCode, sandbox);
 
 // Inject activeRequests Map for service-worker.js
 vm.runInContext('const activeRequests = new Map();', sandbox);
@@ -104,6 +106,7 @@ async function runDataModelTests() {
     if (!res.networkEvidence) { console.error(`[FAIL] ${testName} - networkEvidence missing`); ok = false; }
     if (!res.browserObservation) { console.error(`[FAIL] ${testName} - browserObservation missing`); ok = false; }
     if (!res.riskSignals) { console.error(`[FAIL] ${testName} - riskSignals missing`); ok = false; }
+    if (!res.safetyEvidence) { console.error(`[FAIL] ${testName} - safetyEvidence missing`); ok = false; }
     
     if (ok) {
       console.log(`[PASS] ${testName} - Schema matches`);

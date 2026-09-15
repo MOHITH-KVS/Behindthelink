@@ -28,7 +28,8 @@
     "128": "assets/icons/icon-128.png"
   },
   "permissions": [
-    "webNavigation"
+    "webNavigation",
+    "storage"
   ],
   "host_permissions": [
     "http://*/*",

@@ -11,7 +11,8 @@ importScripts(
   '../content/tracking-registry.js',
   '../content/shortener-registry.js',
   '../content/affiliate-registry.js',
-  '../content/url-analyzer.js'
+  '../content/url-analyzer.js',
+  '../shared/safety-analyzer.js'
 );
 
 const activeRequests = new Map();
@@ -152,12 +153,33 @@ async function resolveDestination(originalUrlString, requestId) {
     }
   }
 
+  let targetRiskSignals = null;
+  let targetLocalSignals = null;
+  if (networkEvidence.status === 'HTTP_REDIRECT_OBSERVED' && networkEvidence.redirectTarget) {
+    const targetAnalysis = BTL.urlAnalyzer ? BTL.urlAnalyzer.analyzeUrl(networkEvidence.redirectTarget) : null;
+    if (targetAnalysis) {
+      targetRiskSignals = targetAnalysis.riskSignals;
+      targetLocalSignals = targetAnalysis.localSignals;
+    }
+  }
+
+  const safetyEvidence = BTL.safetyAnalyzer ? BTL.safetyAnalyzer.computeSafetyEvidence(
+    originalUrlString,
+    localSignals,
+    riskSignals,
+    targetRiskSignals,
+    targetLocalSignals,
+    networkEvidence,
+    browserObservation
+  ) : null;
+
   return {
     originalUrl: originalUrlString,
     localSignals: localSignals,
     riskSignals: riskSignals,
     networkEvidence: networkEvidence,
-    browserObservation: browserObservation
+    browserObservation: browserObservation,
+    safetyEvidence: safetyEvidence
   };
 }
 
@@ -352,11 +374,12 @@ if (chrome.webNavigation) {
         });
       }
       
-      setTimeout(() => {
+      const timeoutHandle = setTimeout(() => {
         if (activeSessions.has(details.tabId)) {
           evaluateAndConcludeSession(details.tabId, 'session_timeout');
         }
       }, SESSION_TIMEOUT);
+      activeSessions.get(details.tabId).timeoutId = timeoutHandle;
     }
     }
     
