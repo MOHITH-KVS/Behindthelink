@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BehindTheLink Test Lab</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f9fafb;
+    }
+    h1 {
+      color: #111827;
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 10px;
+    }
+    h2 {
+      color: #374151;
+      margin-top: 30px;
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 5px;
+    }
+    .instruction {
+      background-color: #e0e7ff;
+      color: #3730a3;
+      padding: 15px;
+      border-radius: 8px;
+      font-weight: 500;
+      margin-bottom: 30px;
+      border: 1px solid #c7d2fe;
+    }
+    .test-group {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    .link-item {
+      margin-bottom: 15px;
+    }
+    .link-item strong {
+      display: block;
+      font-size: 14px;
+      color: #4b5563;
+      margin-bottom: 4px;
+    }
+    a {
+      color: #2563eb;
+      text-decoration: none;
+      word-break: break-all;
+    }
+    a:hover {
+      text-decoration: underline;
+      color: #1d4ed8;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>BehindTheLink Test Lab</h1>
+  
+  <div class="instruction">
+    Hover over a link to test BehindTheLink. Click it only when you want to test browser navigation.
+  </div>
+
+  <div class="test-group">
+    <h2>1. NORMAL LINKS</h2>
+    <div class="link-item">
+      <strong>Example.com</strong>
+      <a href="https://example.com/">https://example.com/</a>
+    </div>
+    <div class="link-item">
+      <strong>httpbin GET</strong>
+      <a href="https://httpbin.org/get">https://httpbin.org/get</a>
+    </div>
+  </div>
+
+  <div class="test-group">
+    <h2>2. HTTP REDIRECT TESTS</h2>
+    <div class="link-item">
+      <strong>1 Redirect</strong>
+      <a href="https://httpbin.org/redirect/1">https://httpbin.org/redirect/1</a>
+    </div>
+    <div class="link-item">
+      <strong>3 Redirects</strong>
+      <a href="https://httpbin.org/redirect/3">https://httpbin.org/redirect/3</a>
+    </div>
+    <div class="link-item">
+      <strong>5 Redirects</strong>
+      <a href="https://httpbin.org/redirect/5">https://httpbin.org/redirect/5</a>
+    </div>
+    <div class="link-item">
+      <strong>Relative Redirect</strong>
+      <a href="https://httpbin.org/relative-redirect/2">https://httpbin.org/relative-redirect/2</a>
+    </div>
+    <div class="link-item">
+      <strong>Absolute Redirect</strong>
+      <a href="https://httpbin.org/absolute-redirect/2">https://httpbin.org/absolute-redirect/2</a>
+    </div>
+  </div>
+
+  <div class="test-group">
+    <h2>3. TRACKING TESTS</h2>
+    <div class="link-item">
+      <strong>UTM Parameters</strong>
+      <a href="https://example.com/?utm_source=test&utm_medium=social&utm_campaign=demo">https://example.com/?utm_source=test&utm_medium=social&utm_campaign=demo</a>
+    </div>
+    <div class="link-item">
+      <strong>Google Click ID (gclid)</strong>
+      <a href="https://example.com/?gclid=test123">https://example.com/?gclid=test123</a>
+    </div>
+    <div class="link-item">
+      <strong>Facebook Click ID (fbclid)</strong>
+      <a href="https://example.com/?fbclid=test123">https://example.com/?fbclid=test123</a>
+    </div>
+  </div>
+
+  <div class="test-group">
+    <h2>4. ENCODED DESTINATION TESTS</h2>
+    <div class="link-item">
+      <strong>Single URL Encoded</strong>
+      <a href="https://example.com/redirect?url=https%3A%2F%2Fexample.org">https://example.com/redirect?url=https%3A%2F%2Fexample.org</a>
+    </div>
+    <div class="link-item">
+      <strong>Double URL Encoded</strong>
+      <a href="https://example.com/redirect?url=https%253A%252F%252Fexample.org">https://example.com/redirect?url=https%253A%252F%252Fexample.org</a>
+    </div>
+  </div>
+
+  <div class="test-group">
+    <h2>5. URL STRUCTURE TESTS</h2>
+    <div class="link-item">
+      <strong>Login Path</strong>
+      <a href="https://example.com/login">https://example.com/login</a>
+    </div>
+    <div class="link-item">
+      <strong>Account Verify Path</strong>
+      <a href="https://example.com/account/verify">https://example.com/account/verify</a>
+    </div>
+    <div class="link-item">
+      <strong>Authentication Syntax (User@Host)</strong>
+      <a href="https://example.com@google.com/">https://example.com@google.com/</a>
+    </div>
+    <div class="link-item">
+      <strong>Subdomain Spoofing</strong>
+      <a href="https://google.com.example.com/">https://google.com.example.com/</a>
+    </div>
+    <div class="link-item">
+      <strong>Redirect Query Parameter</strong>
+      <a href="https://example.com/?redirect=https%3A%2F%2Fexample.org">https://example.com/?redirect=https%3A%2F%2Fexample.org</a>
+    </div>
+  </div>
+
+  <div class="test-group">
+    <h2>6. REAL-WORLD LINKS</h2>
+    <div class="link-item">
+      <strong>YouTube short URL</strong>
+      <a href="https://youtu.be/dQw4w9WgXcQ">https://youtu.be/dQw4w9WgXcQ</a>
+    </div>
+    <div class="link-item">
+      <strong>TinyURL</strong>
+      <a href="https://tinyurl.com/43x7pyjk">https://tinyurl.com/43x7pyjk</a>
+    </div>
+  </div>
+
+  <div class="test-group">
+    <h2>7. LOCAL RISK SIGNALS</h2>
+    <div class="link-item">
+      <strong>Sensitive Path Only</strong>
+      <a href="https://example.com/login">https://example.com/login</a>
+    </div>
+    <div class="link-item">
+      <strong>Deep Subdomain</strong>
+      <a href="https://a.b.c.example.com/">https://a.b.c.example.com/</a>
+    </div>
+    <div class="link-item">
+      <strong>IP Host</strong>
+      <a href="https://192.168.1.10/login">https://192.168.1.10/login</a>
+    </div>
+    <div class="link-item">
+      <strong>Unusual Port</strong>
+      <a href="https://example.com:8080/login">https://example.com:8080/login</a>
+    </div>
+    <div class="link-item">
+      <strong>Heavy Encoding</strong>
+      <a href="https://example.com/%68%74%74%70">https://example.com/%68%74%74%70</a>
+    </div>
+    <div class="link-item">
+      <strong>Punycode</strong>
+      <a href="https://xn--example-domain.test/">https://xn--example-domain.test/</a>
+    </div>
+    <div class="link-item">
+      <strong>Strong Combination</strong>
+      <a href="https://example.com@xn--example-domain.test/">https://example.com@xn--example-domain.test/</a>
+    </div>
+  </div>
+
+  <div class="test-group">
+    <h2>8. RISK EDGE CASES</h2>
+    <div class="link-item">
+      <strong>2-Level Subdomain (NONE)</strong>
+      <a href="https://example.com/">https://example.com/</a>
+    </div>
+    <div class="link-item">
+      <strong>3-Level Subdomain (NONE)</strong>
+      <a href="https://sub.example.com/">https://sub.example.com/</a>
+    </div>
+    <div class="link-item">
+      <strong>4-Level Subdomain (NONE)</strong>
+      <a href="https://a.b.example.com/">https://a.b.example.com/</a>
+    </div>
+    <div class="link-item">
+      <strong>5-Level Subdomain (LOW)</strong>
+      <a href="https://a.b.c.example.com/">https://a.b.c.example.com/</a>
+    </div>
+    <div class="link-item">
+      <strong>Normal Spaces Encoded (NONE)</strong>
+      <a href="https://example.com/?q=hello%20world">https://example.com/?q=hello%20world</a>
+    </div>
+    <div class="link-item">
+      <strong>Heavily Encoded Path (LOW)</strong>
+      <a href="https://example.com/%2F%61%62%63%64%65%66">https://example.com/%2F%61%62%63%64%65%66</a>
+    </div>
+    <div class="link-item">
+      <strong>Normal HTTPS Port (NONE)</strong>
+      <a href="https://example.com:443/">https://example.com:443/</a>
+    </div>
+    <div class="link-item">
+      <strong>Non-Standard Port (LOW)</strong>
+      <a href="https://example.com:8443/">https://example.com:8443/</a>
+    </div>
+  </div>
+
+  <div class="test-group">
+    <h2>9. BROWSER OBSERVATION TESTS</h2>
+    <div class="link-item">
+      <strong>1. Same-tab normal link</strong>
+      <a href="https://example.com/test-observation">https://example.com/test-observation</a>
+    </div>
+    <div class="link-item">
+      <strong>2. target=_blank link</strong>
+      <a href="https://example.com/test-target-blank" target="_blank">https://example.com/test-target-blank</a>
+    </div>
+    <div class="link-item">
+      <strong>3. link expected to redirect</strong>
+      <a href="https://httpbin.org/redirect-to?url=https%3A%2F%2Fexample.org">https://httpbin.org/redirect-to?url=https%3A%2F%2Fexample.org</a>
+    </div>
+    <div class="link-item">
+      <strong>4. normal direct link</strong>
+      <a href="https://example.org/">https://example.org/</a>
+    </div>
+  </div>
+
+</body>
+</html>
