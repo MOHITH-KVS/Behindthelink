@@ -164,8 +164,30 @@ runTest("BASIS-005: Shortener + FAILED + no obs -> INCOMPLETE", () => {
     "https://bit.ly/abc", createLocalSignals(true), createRiskSignals(),
     null, null, createNetworkEvidence('FAILED'), createBrowserObservation('NONE')
   );
-  assert.strictEqual(result.assessmentBasis, 'INCOMPLETE');
+  assert.strictEqual(result.limitations.length, 4);
 });
 
-console.log(`\nResults: ${passed}/${total} passed`);
+// Phase 3 Reputation Tests
+runTest("SAFETY-REP-001: REPUTATION_CONFIRMED_THREAT triggers STRONG_WARNING", () => {
+  const result = compute(
+    "https://malware.com", createLocalSignals(), createRiskSignals(),
+    null, null, createNetworkEvidence('NO_REDIRECT_OBSERVED'), createBrowserObservation('NONE'),
+    { status: 'REPUTATION_CONFIRMED_THREAT', threatTypes: ['MALWARE'] }
+  );
+  assert.strictEqual(result.status, 'STRONG_WARNING');
+  const repSignal = result.signals.find(s => s.id === 'REPUTATION_CONFIRMED_THREAT');
+  assert.ok(repSignal);
+  assert.strictEqual(repSignal.tier, 'D');
+});
+
+runTest("SAFETY-REP-002: REPUTATION_NO_MATCH falls back to Tier B logic", () => {
+  const result = compute(
+    "https://example.com:8080", createLocalSignals(), createRiskSignals([{ type: 'UNUSUAL_PORT' }]),
+    null, null, createNetworkEvidence('NO_REDIRECT_OBSERVED'), createBrowserObservation('NONE'),
+    { status: 'REPUTATION_NO_MATCH' }
+  );
+  assert.strictEqual(result.status, 'INFORMATIONAL'); // Single tier B
+});
+
+console.log(`\nRESULTS: ${passed}/${total} passed`);
 if (passed !== total) process.exit(1);

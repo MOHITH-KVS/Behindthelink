@@ -192,15 +192,21 @@
     targetRiskSignals,
     targetLocalSignals,
     networkEvidence,
-    browserObservation
+    browserObservation,
+    reputationSignals
   ) {
     var tierA = [];
     var tierB = [];
+    var tierD = [];
     var limitations = [
       "Analysis based on URL structure — page content was not inspected",
-      "Local heuristics cannot confirm safety or malicious intent",
-      "Reputation checking not available in this version"
+      "Local heuristics cannot confirm safety or malicious intent"
     ];
+    if (!reputationSignals || reputationSignals.status === 'REPUTATION_NOT_ENABLED') {
+      limitations.push("Reputation checking not enabled");
+    } else if (reputationSignals.status === 'REPUTATION_UNAVAILABLE') {
+      limitations.push("Reputation checking currently unavailable (network error)");
+    }
 
     // --- STEP 1: Map ORIGINAL URL riskSignals to tiers ---
     if (riskSignals && riskSignals.signals) {
@@ -444,7 +450,21 @@
     var dimensionCount = Object.keys(activeDimensions).length;
 
     var status;
-    if (tierB.length === 0) {
+    
+    // --- STEP 4.5: Check Reputation (Tier D) ---
+    if (reputationSignals && reputationSignals.status === 'REPUTATION_CONFIRMED_THREAT') {
+      status = 'STRONG_WARNING';
+      tierD.push({
+        id: 'REPUTATION_CONFIRMED_THREAT',
+        tier: 'D',
+        dimension: 'reputation',
+        urlContext: 'reputation_check',
+        source: 'reputation_engine',
+        epistemic: 'VERIFIED',
+        label: 'Known threat detected',
+        detail: 'This link was flagged as a known threat (' + (reputationSignals.threatTypes ? reputationSignals.threatTypes.join(', ') : 'malicious') + ').'
+      });
+    } else if (tierB.length === 0) {
       status = (tierA.length > 0) ? 'INFORMATIONAL' : 'NO_SIGNALS_DETECTED';
     } else if (dimensionCount >= 2) {
       status = 'UNUSUAL_CHARACTERISTICS';
@@ -454,6 +474,7 @@
 
     // --- STEP 6: Assemble and return ---
     var allSignals = []
+      .concat(tierD)
       .concat(tierB.filter(function(s) { return s.urlContext === 'original_url'; }))
       .concat(tierB.filter(function(s) { return s.urlContext === 'network_target_url'; }))
       .concat(tierA.filter(function(s) { return s.urlContext === 'original_url'; }))

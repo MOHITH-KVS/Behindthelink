@@ -35,6 +35,10 @@
     "http://*/*",
     "https://*/*"
   ],
+  "optional_host_permissions": [
+    "https://reputation.behindthelink.net/*"
+  ],
+  "options_page": "src/options/options.html",
   "background": {
     "service_worker": "src/background/service-worker.js"
   }

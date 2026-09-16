@@ -12,7 +12,11 @@ importScripts(
   '../content/shortener-registry.js',
   '../content/affiliate-registry.js',
   '../content/url-analyzer.js',
-  '../shared/safety-analyzer.js'
+  '../shared/safety-analyzer.js',
+  '../shared/reputation/canonicalization.js',
+  '../shared/reputation/expression-generator.js',
+  '../shared/reputation/hash-utils.js',
+  './reputation-engine.js'
 );
 
 const activeRequests = new Map();
@@ -163,6 +167,12 @@ async function resolveDestination(originalUrlString, requestId) {
     }
   }
 
+  let reputationSignals = { status: 'REPUTATION_UNAVAILABLE' };
+  if (BTL.reputationEngine) {
+    const repTarget = networkEvidence.status === 'HTTP_REDIRECT_OBSERVED' ? networkEvidence.redirectTarget : null;
+    reputationSignals = await BTL.reputationEngine.checkReputation(originalUrlString, repTarget);
+  }
+
   const safetyEvidence = BTL.safetyAnalyzer ? BTL.safetyAnalyzer.computeSafetyEvidence(
     originalUrlString,
     localSignals,
@@ -170,7 +180,8 @@ async function resolveDestination(originalUrlString, requestId) {
     targetRiskSignals,
     targetLocalSignals,
     networkEvidence,
-    browserObservation
+    browserObservation,
+    reputationSignals
   ) : null;
 
   return {

@@ -171,61 +171,6 @@
 
     cardElement.appendChild(destBlock);
 
-    // ── Signals Block ──
-    var signalsBlock = document.createElement('div');
-    signalsBlock.className = 'btl-section';
-    var hasSignals = false;
-
-    var sigLabel = document.createElement('div');
-    sigLabel.className = 'btl-label';
-    sigLabel.textContent = 'LINK SIGNALS';
-    signalsBlock.appendChild(sigLabel);
-
-    if (locals.isShortener) {
-      signalsBlock.appendChild(createSignalItem('• Shortened link'));
-      hasSignals = true;
-    }
-    if (locals.trackingParams && locals.trackingParams.length > 0) {
-      signalsBlock.appendChild(createSignalItem('• Contains tracking information'));
-      hasSignals = true;
-    }
-    if (locals.hasAffiliate) {
-      signalsBlock.appendChild(createSignalItem('• Affiliate link detected'));
-      hasSignals = true;
-    }
-
-    if (hasSignals) {
-      cardElement.appendChild(signalsBlock);
-    }
-
-    // ── Security Block ──
-    var risk = payload.riskSignals || { severity: 'NONE', signals: [] };
-    if (risk.severity !== 'NONE') {
-      var securityBlock = document.createElement('div');
-      securityBlock.className = 'btl-section';
-
-      var secLabel = document.createElement('div');
-      secLabel.className = 'btl-label btl-label-warning';
-      secLabel.textContent = 'SECURITY';
-      securityBlock.appendChild(secLabel);
-
-      if (risk.severity === 'MEDIUM') {
-        var warningEl = document.createElement('div');
-        warningEl.textContent = '⚠ This link has a few unusual characteristics';
-        warningEl.style.fontWeight = 'bold';
-        warningEl.style.color = '#b91c1c'; // Tailwind red-700
-        warningEl.style.marginBottom = '4px';
-        warningEl.style.fontSize = '12px';
-        securityBlock.appendChild(warningEl);
-      }
-
-      risk.signals.forEach(function(sig) {
-        securityBlock.appendChild(createSignalItem('• ' + sig.label));
-      });
-
-      cardElement.appendChild(securityBlock);
-    }
-
     // ── Details Block ──
     if (!isLoading) {
       if (payload.safetyEvidence) {
