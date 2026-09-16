@@ -29,6 +29,9 @@ const documentMock = {
       attachShadow: function() { return this; }
     };
   },
+  createTextNode: function(text) {
+    return { textContent: text };
+  },
   body: { appendChild: function() {} }
 };
 
@@ -51,7 +54,6 @@ const sandbox = {
 };
 
 vm.createContext(sandbox);
-
 const uiCode = fs.readFileSync('./src/content/preview-ui.js', 'utf8');
 vm.runInContext(uiCode, sandbox);
 
@@ -71,6 +73,7 @@ function runTest(name, fn) {
 
 function findElementByClass(el, className) {
   if (el.className && el.className.includes(className)) return el;
+  if (!el.children) return null;
   for (let child of el.children) {
     let found = findElementByClass(child, className);
     if (found) return found;
@@ -81,6 +84,7 @@ function findElementByClass(el, className) {
 function findElementsByClass(el, className) {
   let results = [];
   if (el.className && el.className.includes(className)) results.push(el);
+  if (!el.children) return results;
   for (let child of el.children) {
     results = results.concat(findElementsByClass(child, className));
   }
@@ -92,69 +96,76 @@ console.log("=== SAFETY-UI TESTS ===");
 const linkMock = { getBoundingClientRect: () => ({ top: 100, left: 100, bottom: 120, right: 200 }) };
 BTL.getResolvedUrl = () => "https://example.com";
 
-// Helper to extract the safety section and its details
-function getSafetyUI(payload) {
+function getCard(payload) {
   BTL.previewUI.show(linkMock, null, false);
   BTL.previewUI.updateNetworkResult(payload);
   const host = BTL.previewUI.getHost();
-  const card = findElementByClass(host, 'btl-card');
-  const safetySection = findElementByClass(card, 'btl-safety-section');
-  if (!safetySection) return null;
-  
-  const statusEl = findElementByClass(safetySection, 'btl-safety-status');
-  const whyPanel = findElementByClass(safetySection, 'btl-why-panel');
-  
-  return { safetySection, statusEl, whyPanel };
+  return findElementByClass(host, 'btl-card');
 }
 
-runTest("UI-001: NO_SIGNALS_DETECTED uses dash and Nothing unusual found", () => {
-  const ui = getSafetyUI({
+runTest("UI-001: Renders Header, Dest, Link Type, Safety", () => {
+  const card = getCard({
     originalUrl: 'https://example.com',
     safetyEvidence: { status: 'NO_SIGNALS_DETECTED', signals: [], assessmentBasis: 'LOCAL_ONLY', limitations: [] }
   });
-  assert.ok(ui);
-  assert.ok(ui.statusEl.textContent.includes('—'));
-  assert.ok(ui.statusEl.textContent.includes('Nothing unusual found'));
-  assert.ok(!ui.whyPanel.open);
+  
+  const labels = findElementsByClass(card, 'btl-label').map(e => e.textContent);
+  assert.ok(labels.includes('WHERE IT GOES') || labels.includes('OPENS'));
+  assert.ok(labels.includes('LINK TYPE'));
+  assert.ok(labels.includes('SAFETY'));
 });
 
-runTest("UI-002: INFORMATIONAL uses ℹ icon", () => {
-  const ui = getSafetyUI({
+runTest("UI-002: Link Type shows Direct link when no signals", () => {
+  const card = getCard({
     originalUrl: 'https://example.com',
-    safetyEvidence: { status: 'INFORMATIONAL', signals: [{ tier: 'A', detail: 'test' }], assessmentBasis: 'LOCAL_ONLY', limitations: [] }
+    safetyEvidence: { status: 'NO_SIGNALS_DETECTED', signals: [], assessmentBasis: 'LOCAL_ONLY', limitations: [] }
   });
-  assert.ok(ui.statusEl.textContent.includes('ℹ'));
-  assert.ok(ui.statusEl.textContent.includes('Some things to know'));
-  assert.ok(!ui.whyPanel.open);
+  const textMains = findElementsByClass(card, 'btl-text-main');
+  assert.ok(textMains.some(t => t.textContent.includes('Direct link')));
 });
 
-runTest("UI-003: UNUSUAL_CHARACTERISTICS uses ⚠ icon and is expanded", () => {
-  const ui = getSafetyUI({
-    originalUrl: 'https://example.com',
-    safetyEvidence: { status: 'UNUSUAL_CHARACTERISTICS', signals: [{ tier: 'B', detail: 'test' }], assessmentBasis: 'LOCAL_ONLY', limitations: [] }
+runTest("UI-003: Callouts for HTTPS and Suspicious Ext", () => {
+  const card = getCard({
+    originalUrl: 'http://example.com/file.exe',
+    safetyEvidence: { 
+      status: 'UNUSUAL_CHARACTERISTICS', 
+      signals: [
+        { id: 'HTTP_NOT_HTTPS' },
+        { id: 'SUSPICIOUS_FILE_EXT' }
+      ] 
+    }
   });
-  assert.ok(ui.statusEl.textContent.includes('⚠'));
-  assert.ok(ui.statusEl.textContent.includes('Some unusual characteristics'));
-  assert.strictEqual(ui.whyPanel.open, 'true');
+  const callouts = findElementsByClass(card, 'btl-callout-title');
+  const texts = callouts.map(c => c.textContent);
+  assert.ok(texts.some(t => t.includes('Executable download')));
+  assert.ok(!texts.some(t => t.includes('HTTPS'))); // Should NOT have HTTPS since it's HTTP_NOT_HTTPS
 });
 
-runTest("UI-004: STRONG_WARNING uses 🚨 icon and is expanded", () => {
-  const ui = getSafetyUI({
+runTest("UI-004: Specific Callout for HTTPS exists on secure link", () => {
+  const card = getCard({
     originalUrl: 'https://example.com',
-    safetyEvidence: { status: 'STRONG_WARNING', signals: [{ tier: 'D', detail: 'threat' }], assessmentBasis: 'LOCAL_ONLY', limitations: [] }
+    safetyEvidence: { status: 'NO_SIGNALS_DETECTED', signals: [] }
   });
-  assert.ok(ui.statusEl.textContent.includes('🚨'));
-  assert.ok(ui.statusEl.textContent.includes('Known threat reported'));
-  assert.strictEqual(ui.whyPanel.open, 'true');
+  const callouts = findElementsByClass(card, 'btl-callout-title');
+  const texts = callouts.map(c => c.textContent);
+  assert.ok(texts.some(t => t.includes('HTTPS')));
 });
 
-runTest("UI-005: Why panel lists signals with bullet points", () => {
-  const ui = getSafetyUI({
-    originalUrl: 'https://example.com',
-    safetyEvidence: { status: 'INFORMATIONAL', signals: [{ tier: 'A', detail: 'Sig 1' }], assessmentBasis: 'LOCAL_ONLY', limitations: [] }
+runTest("UI-005: Why should I care renders correctly", () => {
+  const card = getCard({
+    originalUrl: 'https://example.com?utm_source=test',
+    safetyEvidence: { 
+      status: 'INFORMATIONAL', 
+      signals: [{ id: 'HAS_TRACKING_PARAMS', tier: 'A', detail: 'test' }] 
+    }
   });
-  const liElements = findElementsByClass(ui.whyPanel, 'btl-why-li');
-  assert.ok(liElements.some(li => li.textContent.includes('Sig 1')));
+  const labels = findElementsByClass(card, 'btl-label');
+  assert.ok(labels.some(l => l.textContent === 'WHY SHOULD I CARE?'));
+  
+  const lists = findElementsByClass(card, 'btl-bullet-list');
+  // First list is under why care, second is under checks
+  const whyCareTexts = lists[0].children.map(c => c.textContent);
+  assert.ok(whyCareTexts.some(t => t.includes('tracking')));
 });
 
 console.log(`\nResults: ${passed}/${total} passed`);

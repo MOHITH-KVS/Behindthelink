@@ -1,0 +1,10 @@
+name = "behindthelink-proxy"
+main = "src/index.js"
+compatibility_date = "2023-01-01"
+
+# We bind a KV namespace for the prefix cache
+[[kv_namespaces]]
+binding = "WEBRISK_CACHE"
+# Add your real KV namespace ID here during deployment
+# id = "YOUR_PROD_KV_ID"
+# preview_id = "YOUR_DEV_KV_ID"

@@ -164,7 +164,7 @@ runTest("BASIS-005: Shortener + FAILED + no obs -> INCOMPLETE", () => {
     "https://bit.ly/abc", createLocalSignals(true), createRiskSignals(),
     null, null, createNetworkEvidence('FAILED'), createBrowserObservation('NONE')
   );
-  assert.strictEqual(result.limitations.length, 4);
+  assert.strictEqual(result.limitations.length, 3);
 });
 
 // Phase 3 Reputation Tests

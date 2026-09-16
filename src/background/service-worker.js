@@ -12,6 +12,7 @@ importScripts(
   '../content/shortener-registry.js',
   '../content/affiliate-registry.js',
   '../content/url-analyzer.js',
+  '../shared/claim-destination-analyzer.js',
   '../shared/safety-analyzer.js',
   '../shared/reputation/canonicalization.js',
   '../shared/reputation/expression-generator.js',
@@ -25,10 +26,10 @@ const MAX_HOPS = 5;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'RESOLVE_DESTINATION') {
-    const { url, requestId } = message;
+    const { url, requestId, contextObj } = message;
     
     // Start resolution
-    resolveDestination(url, requestId).then(sendResponse);
+    resolveDestination(url, requestId, contextObj).then(sendResponse);
     return true; // Keep message channel open for async response
   }
 
@@ -65,7 +66,7 @@ function normalizeUrl(urlString) {
   }
 }
 
-async function resolveDestination(originalUrlString, requestId) {
+async function resolveDestination(originalUrlString, requestId, contextObj) {
   const controller = new AbortController();
   activeRequests.set(requestId, controller);
 
@@ -167,11 +168,12 @@ async function resolveDestination(originalUrlString, requestId) {
     }
   }
 
-  let reputationSignals = { status: 'REPUTATION_UNAVAILABLE' };
-  if (BTL.reputationEngine) {
-    const repTarget = networkEvidence.status === 'HTTP_REDIRECT_OBSERVED' ? networkEvidence.redirectTarget : null;
-    reputationSignals = await BTL.reputationEngine.checkReputation(originalUrlString, repTarget);
-  }
+  let reputationSignals = { status: 'REPUTATION_NOT_ENABLED' };
+  // MVP Phase 5: Reputation checking bypassed. No external network requests allowed.
+  // if (BTL.reputationEngine) {
+  //   const repTarget = networkEvidence.status === 'HTTP_REDIRECT_OBSERVED' ? networkEvidence.redirectTarget : null;
+  //   reputationSignals = await BTL.reputationEngine.checkReputation(originalUrlString, repTarget);
+  // }
 
   const safetyEvidence = BTL.safetyAnalyzer ? BTL.safetyAnalyzer.computeSafetyEvidence(
     originalUrlString,
@@ -181,7 +183,8 @@ async function resolveDestination(originalUrlString, requestId) {
     targetLocalSignals,
     networkEvidence,
     browserObservation,
-    reputationSignals
+    reputationSignals,
+    contextObj
   ) : null;
 
   return {

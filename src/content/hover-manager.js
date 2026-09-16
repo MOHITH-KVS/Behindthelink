@@ -129,13 +129,14 @@
       showTimerId = null;
       var url = BTL.getResolvedUrl(link);
       var analysisResult = BTL.urlAnalyzer ? BTL.urlAnalyzer.analyzeUrl(url) : null;
+      var contextObj = BTL.contextExtractor ? BTL.contextExtractor.extract(link) : null;
       
       if (!BTL.shouldInspectLink(link, url, analysisResult)) {
         return; // Suppress popup and network requests
       }
 
       // Show immediately with local results and loading state
-      BTL.previewUI.show(link, analysisResult, true);
+      BTL.previewUI.show(link, analysisResult, true, contextObj);
       
       var isResolved = false;
       var uiDeadlineTimer = setTimeout(function() {
@@ -155,7 +156,8 @@
       safeSendMessage({
         type: 'RESOLVE_DESTINATION',
         url: url,
-        requestId: activeReqId
+        requestId: activeReqId,
+        contextObj: contextObj
       }, function(response) {
         clearTimeout(uiDeadlineTimer);
         if (activeReqId === currentRequestId && !isResolved && response) {

@@ -14,6 +14,7 @@
         "src/content/shortener-registry.js",
         "src/content/affiliate-registry.js",
         "src/content/url-analyzer.js",
+        "src/content/context-extractor.js",
         "src/content/preview-ui.js",
         "src/content/hover-manager.js",
         "src/content/content.js"

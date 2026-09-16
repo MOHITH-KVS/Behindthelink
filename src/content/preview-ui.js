@@ -14,24 +14,24 @@
   var hostElement = null;
   var shadowRoot = null;
   var cardElement = null;
-  var isClosing = false;
   var shouldBeVisible = false;
 
   // ───────────────────────────────────────────────────
   //  Public API
   // ───────────────────────────────────────────────────
 
-  function show(linkElement, analysisResult, isLoading) {
+  function show(linkElement, analysisResult, isLoading, contextObj) {
     ensureHost();
     
-    // Create a temporary mock payload for loading state
     var url = BTL.getResolvedUrl(linkElement);
     var payload = {
       originalUrl: url,
       localSignals: analysisResult ? analysisResult.localSignals : {},
       riskSignals: analysisResult ? analysisResult.riskSignals : { severity: 'NONE', signals: [] },
-      networkEvidence: null,
-      browserObservation: null
+      networkEvidence: analysisResult ? analysisResult.networkEvidence : null,
+      browserObservation: analysisResult ? analysisResult.browserObservation : null,
+      safetyEvidence: analysisResult ? analysisResult.safetyEvidence : null,
+      context: contextObj || null
     };
 
     render(payload, isLoading);
@@ -95,62 +95,62 @@
     }
   }
 
+  function getHostname(urlStr) {
+    try { return new URL(urlStr).hostname; } catch(e) { return urlStr; }
+  }
+
+  function hasSignal(signals, id) {
+    for (var i = 0; i < signals.length; i++) {
+      if (signals[i].id === id) return true;
+    }
+    return false;
+  }
+
   function render(payload, isLoading) {
     cardElement.replaceChildren();
 
     var url = payload.originalUrl || '';
-    var domain = '';
-    try { domain = new URL(url).hostname; } catch(e) { domain = url; }
+    var domain = getHostname(url);
     if (payload.localSignals && payload.localSignals.hostname) {
       domain = payload.localSignals.hostname;
     }
 
-    // ── Source Domain Header ──
-    var header = document.createElement('div');
-    header.className = 'btl-header';
-    var icon = document.createElement('span');
-    icon.className = 'btl-header-icon';
-    icon.textContent = '🌐';
-    header.appendChild(icon);
-    var title = document.createElement('span');
-    title.textContent = domain;
-    header.appendChild(title);
-    cardElement.appendChild(header);
-
-    // ── Destination Block ──
-    var destBlock = document.createElement('div');
-    destBlock.className = 'btl-section';
-    
-    var destLabel = document.createElement('div');
-    destLabel.className = 'btl-label';
-    destBlock.appendChild(destLabel);
-    
-    var destUrl = document.createElement('div');
-    destUrl.className = 'btl-dest-url';
-    destBlock.appendChild(destUrl);
-    
-    var destEvidence = document.createElement('div');
-    destEvidence.className = 'btl-evidence';
-    destBlock.appendChild(destEvidence);
-
     var locals = payload.localSignals || {};
     var net = payload.networkEvidence || {};
     var obs = payload.browserObservation || {};
+    var safety = payload.safetyEvidence || { status: 'NO_SIGNALS_DETECTED', signals: [], limitations: [], assessmentBasis: 'LOCAL_ONLY' };
+    var signals = safety.signals || [];
     var hasEmbedded = locals.embeddedCandidates && locals.embeddedCandidates.length > 0;
 
+    // 1. Header
+    var header = document.createElement('div');
+    header.className = 'btl-header';
+    header.textContent = '🌐 ' + domain;
+    cardElement.appendChild(header);
+
+    // 2. Destination Block
+    var destBlock = document.createElement('div');
+    destBlock.className = 'btl-section';
+    var destLabel = document.createElement('div');
+    destLabel.className = 'btl-label';
+    var destUrl = document.createElement('div');
+    destUrl.className = 'btl-dest-url';
+    var destEvidence = document.createElement('div');
+    
     if (isLoading) {
       destLabel.textContent = 'WHERE IT GOES';
       destUrl.textContent = 'Checking destination…';
       destUrl.style.color = '#6b7280';
+      destEvidence.className = 'btl-evidence';
     } else if (net.status === 'HTTP_REDIRECT_OBSERVED' && net.redirectTarget) {
       destLabel.textContent = 'OPENS';
       destUrl.textContent = formatTargetUrl(net.redirectTarget);
-      destEvidence.textContent = '✓ Destination checked';
+      destEvidence.textContent = '✓ HTTP verified';
       destEvidence.className = 'btl-evidence btl-evidence-success';
     } else if (net.status === 'NO_REDIRECT_OBSERVED') {
       destLabel.textContent = 'OPENS';
       destUrl.textContent = domain;
-      destEvidence.textContent = '✓ Destination checked';
+      destEvidence.textContent = '✓ HTTP verified';
       destEvidence.className = 'btl-evidence btl-evidence-success';
     } else if (obs.status === 'STRONG_CORRELATION' && obs.observedLatestUrl) {
       destLabel.textContent = 'OPENS';
@@ -158,185 +158,279 @@
       destEvidence.textContent = '✓ Previously observed';
       destEvidence.className = 'btl-evidence btl-evidence-success';
     } else if (hasEmbedded) {
-      destLabel.textContent = 'THIS LINK CONTAINS ANOTHER LINK';
-      destLabel.className = 'btl-label btl-label-warning';
-      destUrl.textContent = formatTargetUrl(locals.embeddedCandidates[0]);
-      destEvidence.textContent = "We found another link inside this URL, but couldn't confirm that you'll be sent there.";
-    } else { // FAILED or anything else
       destLabel.textContent = 'WHERE IT GOES';
-      destUrl.textContent = "Destination couldn't be verified";
-      destUrl.style.color = '#6b7280';
-      destEvidence.textContent = "We couldn't verify where this link leads.";
+      destUrl.textContent = formatTargetUrl(locals.embeddedCandidates[0]);
+      destEvidence.textContent = '⚠ Predicted/likely';
+      destEvidence.className = 'btl-evidence btl-evidence-warning';
+    } else {
+      destLabel.textContent = 'WHERE IT GOES';
+      destUrl.textContent = domain;
+      destEvidence.textContent = '❌ Could not verify';
+      destEvidence.className = 'btl-evidence btl-evidence-neutral';
     }
-
+    
+    destBlock.appendChild(destLabel);
+    destBlock.appendChild(destUrl);
+    destBlock.appendChild(destEvidence);
     cardElement.appendChild(destBlock);
 
-    // ── Details Block ──
-    if (!isLoading) {
-      if (payload.safetyEvidence) {
-        cardElement.appendChild(renderSafetySection(payload.safetyEvidence));
-      }
-
-      var detailsWrapper = document.createElement('details');
-      detailsWrapper.className = 'btl-details';
-      detailsWrapper.style.pointerEvents = 'auto'; 
-      
-      var summary = document.createElement('summary');
-      summary.textContent = 'More info ▾';
-      detailsWrapper.appendChild(summary);
-      
-      var detailsContent = document.createElement('div');
-      detailsContent.className = 'btl-details-content';
-      
-      detailsContent.appendChild(createDetailRow('Original URL', payload.originalUrl));
-      if (net.status === 'HTTP_REDIRECT_OBSERVED') detailsContent.appendChild(createDetailRow('Redirect Target', net.redirectTarget));
-      if (obs.status === 'STRONG_CORRELATION') {
-        detailsContent.appendChild(createDetailRow('Observed URL', obs.observedLatestUrl));
-        detailsContent.appendChild(createDetailRow('Observed At', new Date(obs.observedAt).toLocaleString()));
-      }
-      if (hasEmbedded) {
-        detailsContent.appendChild(createDetailRow('Embedded Candidate', locals.embeddedCandidates[0]));
-      }
-      
-      detailsWrapper.appendChild(detailsContent);
-      cardElement.appendChild(detailsWrapper);
-      
-      cardElement.style.pointerEvents = 'auto';
-    } else {
+    if (isLoading) {
       cardElement.style.pointerEvents = 'none';
+      return;
     }
-  }
 
-  function renderSafetySection(safetyEvidence) {
-    var section = document.createElement('div');
-    section.className = 'btl-section btl-safety-section';
+    cardElement.style.pointerEvents = 'auto';
 
-    var label = document.createElement('div');
-    label.className = 'btl-label';
-    label.textContent = 'SAFETY';
-    section.appendChild(label);
+    // 3. Link Type
+    var linkTypes = [];
+    if (hasSignal(signals, 'REDIRECTS_THROUGH_SHORTENER')) linkTypes.push('Shortened link');
+    if (hasSignal(signals, 'REDIRECTS_TO_DIFFERENT_DOMAIN')) linkTypes.push('Redirecting link');
+    if (hasSignal(signals, 'HAS_TRACKING_PARAMS')) linkTypes.push('Tracking link');
+    if (hasSignal(signals, 'HAS_AFFILIATE')) linkTypes.push('Affiliate-style link');
+    
+    var typeText = linkTypes.length > 0 ? linkTypes.join(' + ') : 'Direct link';
+    
+    var typeBlock = document.createElement('div');
+    typeBlock.className = 'btl-section';
+    var typeLabel = document.createElement('div');
+    typeLabel.className = 'btl-label';
+    typeLabel.textContent = 'LINK TYPE';
+    var typeVal = document.createElement('div');
+    typeVal.className = 'btl-text-main';
+    typeVal.textContent = typeText;
+    typeBlock.appendChild(typeLabel);
+    typeBlock.appendChild(typeVal);
+    cardElement.appendChild(typeBlock);
 
+    // 4. Specific Callouts
+    var callouts = [];
+    if (!hasSignal(signals, 'HTTP_NOT_HTTPS')) {
+      callouts.push({ icon: '✓', title: 'HTTPS', desc: 'The connection is encrypted. HTTPS does not by itself prove that the website is legitimate.', color: '#10b981' });
+    }
+    if (hasSignal(signals, 'SUSPICIOUS_FILE_EXT')) {
+      callouts.push({ icon: '⚠', title: 'Executable download', desc: 'This link appears to point to an executable file. Only open it if you expected this download.', color: '#d97706' });
+    }
+    if (hasSignal(signals, 'USERINFO_IN_URL')) {
+      callouts.push({ icon: '⚠', title: 'Embedded credentials', desc: 'This URL contains username/password information.', color: '#d97706' });
+    }
+    if (hasSignal(signals, 'SENSITIVE_ACTION_PATH') || hasSignal(signals, 'CONTEXT_LOGIN') || hasSignal(signals, 'CONTEXT_PAYMENT') || hasSignal(signals, 'CONTEXT_VERIFY') || hasSignal(signals, 'CONTEXT_PASSWORD') || hasSignal(signals, 'CONTEXT_ACCOUNT')) {
+      callouts.push({ icon: 'ℹ', title: 'Sensitive action', desc: 'This destination appears to involve login, verification, payment, or another sensitive action.', color: '#3b82f6' });
+    }
+
+    callouts.forEach(function(c) {
+      var cb = document.createElement('div');
+      cb.className = 'btl-callout';
+      
+      var cTitle = document.createElement('div');
+      cTitle.className = 'btl-callout-title';
+      cTitle.style.color = c.color;
+      var cIcon = document.createElement('span');
+      cIcon.textContent = c.icon + ' ';
+      cTitle.appendChild(cIcon);
+      cTitle.appendChild(document.createTextNode(c.title));
+      
+      var cDesc = document.createElement('div');
+      cDesc.className = 'btl-callout-desc';
+      cDesc.textContent = c.desc;
+      
+      cb.appendChild(cTitle);
+      cb.appendChild(cDesc);
+      cardElement.appendChild(cb);
+    });
+
+    // 5. Safety
+    var safetyBlock = document.createElement('div');
+    safetyBlock.className = 'btl-section';
+    var safetyLabel = document.createElement('div');
+    safetyLabel.className = 'btl-label';
+    safetyLabel.textContent = 'SAFETY';
+    safetyBlock.appendChild(safetyLabel);
+    
     var statusEl = document.createElement('div');
     statusEl.className = 'btl-safety-status';
-
-    var iconEl = document.createElement('span');
-    var textEl = document.createElement('span');
     
-    var isExpanded = false;
-
-    switch (safetyEvidence.status) {
-      case 'NO_SIGNALS_DETECTED':
-        iconEl.textContent = '—';
-        iconEl.style.color = '#6b7280';
-        textEl.textContent = 'Nothing unusual found';
-        textEl.style.color = '#6b7280';
+    var sIcon = document.createElement('span');
+    var sText = document.createElement('span');
+    
+    var mismatchSignal = null;
+    for (var k = 0; k < signals.length; k++) {
+      if (signals[k].id === 'CLAIM_DESTINATION_MISMATCH') {
+        mismatchSignal = signals[k];
         break;
-      case 'INFORMATIONAL':
-        iconEl.textContent = 'ℹ';
-        iconEl.style.color = '#64748b';
-        textEl.textContent = 'Some things to know';
-        textEl.style.color = '#64748b';
-        break;
-      case 'UNUSUAL_CHARACTERISTICS':
-        iconEl.textContent = '⚠';
-        iconEl.style.color = '#d97706';
-        textEl.textContent = 'Some unusual characteristics';
-        textEl.style.color = '#d97706';
-        isExpanded = true;
-        break;
-      case 'STRONG_WARNING':
-        iconEl.textContent = '🚨';
-        iconEl.style.color = '#dc2626';
-        textEl.textContent = 'Known threat reported';
-        textEl.style.color = '#dc2626';
-        isExpanded = true;
-        break;
+      }
     }
 
-    statusEl.appendChild(iconEl);
-    statusEl.appendChild(textEl);
-    section.appendChild(statusEl);
+    if (mismatchSignal) {
+      sIcon.textContent = '⚠'; sIcon.style.color = '#d97706';
+      sText.textContent = mismatchSignal.label; sText.style.color = '#d97706';
+      
+      statusEl.appendChild(sIcon);
+      statusEl.appendChild(sText);
+      safetyBlock.appendChild(statusEl);
 
-    var whyPanel = renderWhyPanel(safetyEvidence.signals, safetyEvidence.assessmentBasis, safetyEvidence.limitations);
-    if (isExpanded) {
-      whyPanel.setAttribute('open', 'true');
+      var mismatchDesc = document.createElement('div');
+      mismatchDesc.className = 'btl-mismatch-desc';
+      mismatchDesc.style.marginTop = '6px';
+      mismatchDesc.style.fontSize = '12px';
+      mismatchDesc.style.color = '#4b5563';
+      mismatchDesc.textContent = mismatchSignal.detail;
+      safetyBlock.appendChild(mismatchDesc);
+    } else {
+      switch (safety.status) {
+        case 'NO_SIGNALS_DETECTED':
+          sIcon.textContent = '✓'; sIcon.style.color = '#10b981';
+          sText.textContent = 'Nothing unusual found'; sText.style.color = '#6b7280';
+          break;
+        case 'INFORMATIONAL':
+          sIcon.textContent = 'ℹ'; sIcon.style.color = '#64748b';
+          sText.textContent = 'Some things to know'; sText.style.color = '#64748b';
+          break;
+        case 'UNUSUAL_CHARACTERISTICS':
+          sIcon.textContent = '⚠'; sIcon.style.color = '#d97706';
+          sText.textContent = 'Some unusual characteristics'; sText.style.color = '#d97706';
+          break;
+        case 'STRONG_WARNING':
+          sIcon.textContent = '🚨'; sIcon.style.color = '#dc2626';
+          sText.textContent = 'Known threat reported'; sText.style.color = '#dc2626';
+          break;
+      }
+      statusEl.appendChild(sIcon);
+      statusEl.appendChild(sText);
+      safetyBlock.appendChild(statusEl);
     }
-    section.appendChild(whyPanel);
+    
+    cardElement.appendChild(safetyBlock);
 
-    return section;
+    // 6. Why should I care?
+    if (signals.length > 0) {
+      var whyBlock = document.createElement('div');
+      whyBlock.className = 'btl-section';
+      var whyLabel = document.createElement('div');
+      whyLabel.className = 'btl-label';
+      whyLabel.textContent = 'WHY SHOULD I CARE?';
+      whyBlock.appendChild(whyLabel);
+      
+      var whyText = document.createElement('div');
+      whyText.className = 'btl-why-text';
+      
+      var reasons = [];
+      if (hasSignal(signals, 'REDIRECTS_THROUGH_SHORTENER')) {
+        reasons.push("The final destination is hidden behind a URL-shortening service.");
+      }
+      if (hasSignal(signals, 'HAS_TRACKING_PARAMS')) {
+        reasons.push("Parameters in the URL are commonly used for campaign/attribution tracking.");
+      }
+      var hasStructural = false;
+      for (var j = 0; j < signals.length; j++) {
+        if (signals[j].tier === 'B' && signals[j].id !== 'HTTP_NOT_HTTPS' && signals[j].id !== 'SUSPICIOUS_FILE_EXT') {
+          hasStructural = true;
+          break;
+        }
+      }
+      if (hasStructural) {
+        reasons.push("The URL contains unusual characteristics. This does not prove it is malicious.");
+      }
+      
+      if (hasSignal(signals, 'CLAIM_DESTINATION_MISMATCH')) {
+        reasons.push("The text of a link can describe one service while the link leads somewhere else.");
+      }
+      
+      if (reasons.length === 0 && signals.length > 0) {
+        reasons.push(signals[0].detail); // Fallback to raw human-readable signal detail
+      }
+      
+      var ul = document.createElement('ul');
+      ul.className = 'btl-bullet-list';
+      reasons.forEach(function(r) {
+        var li = document.createElement('li');
+        li.textContent = r;
+        ul.appendChild(li);
+      });
+      whyBlock.appendChild(ul);
+      cardElement.appendChild(whyBlock);
+    }
+    
+    // 6b. What should I do?
+    if (hasSignal(signals, 'CLAIM_DESTINATION_MISMATCH')) {
+      var actionBlock = document.createElement('div');
+      actionBlock.className = 'btl-section';
+      var actionLabel = document.createElement('div');
+      actionLabel.className = 'btl-label';
+      actionLabel.textContent = 'WHAT SHOULD I DO?';
+      actionBlock.appendChild(actionLabel);
+      
+      var actionText = document.createElement('div');
+      actionText.className = 'btl-why-text';
+      actionText.textContent = "Check the destination domain before entering information.";
+      actionBlock.appendChild(actionText);
+      
+      cardElement.appendChild(actionBlock);
+    }
+
+    // 7. What we checked
+    var checksWrapper = document.createElement('details');
+    checksWrapper.className = 'btl-details';
+    var checksSummary = document.createElement('summary');
+    checksSummary.textContent = 'What we checked ▾';
+    checksWrapper.appendChild(checksSummary);
+    
+    var checksContent = document.createElement('div');
+    checksContent.className = 'btl-details-content';
+    
+    var cList = document.createElement('ul');
+    cList.className = 'btl-bullet-list';
+    cList.appendChild(createLi('Link text'));
+    cList.appendChild(createLi('Link context'));
+    cList.appendChild(createLi('URL structure'));
+    cList.appendChild(createLi('Tracking parameters'));
+    if (net.status !== 'FAILED') {
+      cList.appendChild(createLi('Redirect behavior'));
+      cList.appendChild(createLi('Destination'));
+    }
+    if (obs.status !== 'NONE') {
+      cList.appendChild(createLi('Browser navigation'));
+    }
+    checksContent.appendChild(cList);
+    
+    var limitsLabel = document.createElement('div');
+    limitsLabel.className = 'btl-limits-label';
+    limitsLabel.textContent = 'Limitations:';
+    checksContent.appendChild(limitsLabel);
+    
+    var limList = document.createElement('ul');
+    limList.className = 'btl-bullet-list';
+    limList.appendChild(createLi('We do not guarantee that a website is safe.'));
+    limList.appendChild(createLi('We do not determine whether a page contains malware.'));
+    limList.appendChild(createLi('We do not currently use an external reputation database.'));
+    checksContent.appendChild(limList);
+    
+    checksWrapper.appendChild(checksContent);
+    cardElement.appendChild(checksWrapper);
+
+    // 8. More info
+    var moreWrapper = document.createElement('details');
+    moreWrapper.className = 'btl-details';
+    var moreSummary = document.createElement('summary');
+    moreSummary.textContent = 'More info ▾';
+    moreWrapper.appendChild(moreSummary);
+    
+    var moreContent = document.createElement('div');
+    moreContent.className = 'btl-details-content';
+    moreContent.appendChild(createDetailRow('Original URL', payload.originalUrl));
+    if (net.status === 'HTTP_REDIRECT_OBSERVED' && net.redirectTarget) {
+      moreContent.appendChild(createDetailRow('Redirect Target', net.redirectTarget));
+    }
+    if (obs.status === 'STRONG_CORRELATION' && obs.observedLatestUrl) {
+      moreContent.appendChild(createDetailRow('Observed URL', obs.observedLatestUrl));
+    }
+    moreWrapper.appendChild(moreContent);
+    cardElement.appendChild(moreWrapper);
   }
-
-  function renderWhyPanel(signals, assessmentBasis, limitations) {
-    var details = document.createElement('details');
-    details.className = 'btl-why-panel';
-    
-    var summary = document.createElement('summary');
-    summary.className = 'btl-why-summary';
-    summary.textContent = 'Why? ▾';
-    
-    // Add logic to toggle the arrow if needed, but standard <details> handles clicking.
-    details.addEventListener('toggle', function() {
-      summary.textContent = details.open ? 'Why? ▴' : 'Why? ▾';
-    });
-
-    details.appendChild(summary);
-
-    var content = document.createElement('div');
-    content.className = 'btl-why-content';
-    
-    var ul = document.createElement('ul');
-    ul.className = 'btl-why-ul';
-
-    // Group signals by Tier
-    var tierB = signals.filter(function(s) { return s.tier === 'B'; });
-    var tierA = signals.filter(function(s) { return s.tier === 'A'; });
-    var tierD = signals.filter(function(s) { return s.tier === 'D'; });
-
-    var allSigs = [].concat(tierD).concat(tierB).concat(tierA);
-    allSigs.forEach(function(sig) {
-      var li = document.createElement('li');
-      li.className = 'btl-why-li';
-      li.textContent = sig.detail;
-      ul.appendChild(li);
-    });
-
-    // Evidence basis statement
-    var basisStr = '';
-    if (assessmentBasis === 'LOCAL_WITH_NETWORK_AND_OBSERVATION') {
-      basisStr = 'Destination verified via network and prior observation';
-    } else if (assessmentBasis === 'LOCAL_WITH_NETWORK') {
-      basisStr = 'Destination verified via network';
-    } else if (assessmentBasis === 'LOCAL_WITH_OBSERVATION') {
-      basisStr = 'Destination was previously observed — Chrome navigated here from this link';
-    } else if (assessmentBasis === 'INCOMPLETE') {
-      // Handled in limitations or we can skip adding a separate line if limitations has it.
-    }
-
-    if (basisStr) {
-      var liBasis = document.createElement('li');
-      liBasis.className = 'btl-why-li';
-      liBasis.textContent = basisStr;
-      ul.appendChild(liBasis);
-    }
-
-    limitations.forEach(function(lim) {
-      var liLim = document.createElement('li');
-      liLim.className = 'btl-why-li';
-      liLim.textContent = lim;
-      ul.appendChild(liLim);
-    });
-
-    content.appendChild(ul);
-    details.appendChild(content);
-
-    return details;
-  }
-
-  function createSignalItem(text) {
-    var el = document.createElement('div');
-    el.className = 'btl-signal-item';
-    el.textContent = text;
-    return el;
+  
+  function createLi(text) {
+    var li = document.createElement('li');
+    li.textContent = text;
+    return li;
   }
 
   function createDetailRow(label, value) {
@@ -353,25 +447,12 @@
     return row;
   }
 
-  function humanizeTime(timestamp) {
-    if (!timestamp) return '';
-    var diff = Date.now() - timestamp;
-    if (diff < 60000) return 'just now';
-    var mins = Math.floor(diff / 60000);
-    if (mins < 60) return mins === 1 ? '1 minute ago' : mins + ' minutes ago';
-    var hours = Math.floor(mins / 60);
-    if (hours < 24) return hours === 1 ? '1 hour ago' : hours + ' hours ago';
-    var days = Math.floor(hours / 24);
-    if (days === 1) return 'yesterday';
-    return days + ' days ago';
-  }
-
   function positionCard(linkElement) {
     var linkRect = linkElement.getBoundingClientRect();
-    var cardW = cardElement.offsetWidth || BTL.CARD_WIDTH;
-    var cardH = cardElement.offsetHeight || 120;
-    var gap = BTL.CARD_GAP;
-    var pad = BTL.VIEWPORT_PADDING;
+    var cardW = cardElement.offsetWidth || BTL.CARD_WIDTH || 320;
+    var cardH = cardElement.offsetHeight || 300;
+    var gap = BTL.CARD_GAP || 8;
+    var pad = BTL.VIEWPORT_PADDING || 16;
     var vw = window.innerWidth;
     var vh = window.innerHeight;
 
@@ -389,152 +470,34 @@
 
   function getStyles() {
     var w = BTL.CARD_WIDTH || 320;
-    var dur = BTL.ANIMATION_DURATION;
+    var dur = BTL.ANIMATION_DURATION || 150;
 
     return (
       ':host{all:initial;}' +
-
-      '.btl-card{' +
-        'width:' + w + 'px;' +
-        'background:#ffffff;' +
-        'border:1px solid rgba(0,0,0,0.08);' +
-        'border-radius:12px;' +
-        'box-shadow:0 4px 12px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.06);' +
-        'padding:16px;' +
-        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;' +
-        'font-size:13px;' +
-        'line-height:1.4;' +
-        'color:#1f2937;' +
-        'box-sizing:border-box;' +
-        'opacity:0;' +
-        'transform:translateY(4px);' +
-        'transition:opacity ' + dur + 'ms ease-out,transform ' + dur + 'ms ease-out;' +
-      '}' +
-
-      '.btl-card.btl-visible{' +
-        'opacity:1;' +
-        'transform:translateY(0);' +
-      '}' +
-
-      '.btl-header{' +
-        'display:flex;' +
-        'align-items:center;' +
-        'gap:6px;' +
-        'font-size:14px;' +
-        'font-weight:600;' +
-        'color:#111827;' +
-        'margin-bottom:12px;' +
-        'overflow-wrap:break-word;' +
-        'word-break:break-all;' +
-      '}' +
-
-      '.btl-section{' +
-        'margin-bottom:12px;' +
-      '}' +
-
-      '.btl-label{' +
-        'font-size:10px;' +
-        'font-weight:700;' +
-        'color:#6b7280;' +
-        'letter-spacing:0.5px;' +
-        'text-transform:uppercase;' +
-        'margin-bottom:4px;' +
-      '}' +
-
-      '.btl-label-warning{' +
-        'color:#d97706;' +
-      '}' +
-
-      '.btl-dest-url{' +
-        'font-size:14px;' +
-        'font-weight:500;' +
-        'color:#111827;' +
-        'margin-bottom:4px;' +
-        'word-break:break-all;' +
-      '}' +
-
-      '.btl-evidence{' +
-        'font-size:12px;' +
-        'color:#6b7280;' +
-        'margin-bottom:2px;' +
-      '}' +
-
-      '.btl-evidence-success{' +
-        'color:#10b981;' +
-        'font-weight:500;' +
-      '}' +
-
-      '.btl-evidence-browser{' +
-        'color:#6366f1;' +
-        'font-weight:500;' +
-      '}' +
-
-      '.btl-evidence-structural{' +
-        'color:#6b7280;' +
-        'margin-top:4px;' +
-      '}' +
-      
-      '.btl-evidence-browser-sub{' +
-        'margin-top:2px;' +
-      '}' +
-
-      '.btl-signal-item{' +
-        'font-size:12px;' +
-        'color:#d97706;' +
-        'margin-bottom:2px;' +
-      '}' +
-
-      '.btl-details{' +
-        'margin-top:12px;' +
-        'border-top:1px solid #f3f4f6;' +
-        'padding-top:8px;' +
-      '}' +
-
-      'summary{' +
-        'font-size:11px;' +
-        'color:#6b7280;' +
-        'cursor:pointer;' +
-        'user-select:none;' +
-      '}' +
-
-      '.btl-details-content{' +
-        'margin-top:8px;' +
-        'font-size:11px;' +
-        'color:#4b5563;' +
-      '}' +
-
-      '.btl-detail-row{' +
-        'margin-bottom:6px;' +
-      '}' +
-
-      '.btl-detail-label{' +
-        'font-weight:600;' +
-        'color:#9ca3af;' +
-      '}' +
-
-      '.btl-detail-value{' +
-        'word-break:break-all;' +
-      '}' +
-      
-      '.btl-safety-status {' +
-        'font-size:14px; font-weight:500; margin-bottom:4px; display:flex; align-items:center; gap:6px;' +
-      '}' +
-      
-      '.btl-why-panel {' +
-        'margin-top:2px; font-size:12px; color:#4b5563;' +
-      '}' +
-      
-      '.btl-why-summary {' +
-        'cursor:pointer; font-weight:500; user-select:none; color:#6b7280; font-size:11px;' +
-      '}' +
-      
-      '.btl-why-ul {' +
-        'margin-top:8px; margin-bottom:0; padding-left:16px; border-top:1px solid #f3f4f6; padding-top:8px;' +
-      '}' +
-      
-      '.btl-why-li {' +
-        'margin-bottom:4px;' +
-      '}'
+      '.btl-card{width:' + w + 'px;background:#ffffff;border:1px solid rgba(0,0,0,0.08);border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08),0 8px 24px rgba(0,0,0,0.06);padding:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13px;line-height:1.4;color:#1f2937;box-sizing:border-box;opacity:0;transform:translateY(4px);transition:opacity ' + dur + 'ms ease-out,transform ' + dur + 'ms ease-out;}' +
+      '.btl-card.btl-visible{opacity:1;transform:translateY(0);}' +
+      '.btl-header{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600;color:#111827;margin-bottom:12px;overflow-wrap:break-word;word-break:break-all;}' +
+      '.btl-section{margin-bottom:12px;}' +
+      '.btl-label{font-size:10px;font-weight:700;color:#6b7280;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:4px;}' +
+      '.btl-dest-url{font-size:14px;font-weight:500;color:#111827;margin-bottom:4px;word-break:break-all;}' +
+      '.btl-text-main{font-size:13px;color:#111827;font-weight:500;}' +
+      '.btl-evidence{font-size:12px;margin-bottom:2px;}' +
+      '.btl-evidence-success{color:#10b981;font-weight:500;}' +
+      '.btl-evidence-warning{color:#d97706;font-weight:500;}' +
+      '.btl-evidence-neutral{color:#6b7280;font-weight:500;}' +
+      '.btl-callout{margin-bottom:8px;padding:8px;background:#f9fafb;border-radius:6px;border-left:3px solid transparent;}' +
+      '.btl-callout-title{font-size:12px;font-weight:600;margin-bottom:2px;}' +
+      '.btl-callout-desc{font-size:12px;color:#4b5563;}' +
+      '.btl-safety-status{font-size:14px;font-weight:500;margin-bottom:4px;display:flex;align-items:center;gap:6px;}' +
+      '.btl-bullet-list{margin:4px 0 0 0;padding-left:16px;font-size:12px;color:#4b5563;}' +
+      '.btl-bullet-list li{margin-bottom:4px;}' +
+      '.btl-limits-label{margin-top:8px;font-weight:600;font-size:12px;color:#4b5563;}' +
+      '.btl-details{margin-top:12px;border-top:1px solid #f3f4f6;padding-top:8px;}' +
+      'summary{font-size:12px;font-weight:500;color:#6b7280;cursor:pointer;user-select:none;}' +
+      '.btl-details-content{margin-top:8px;font-size:11px;color:#4b5563;}' +
+      '.btl-detail-row{margin-bottom:6px;}' +
+      '.btl-detail-label{font-weight:600;color:#9ca3af;}' +
+      '.btl-detail-value{word-break:break-all;}'
     );
   }
 

@@ -1,0 +1,12 @@
+{
+  "name": "behindthelink-proxy",
+  "version": "1.0.0",
+  "description": "BehindTheLink Reputation Proxy",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^1.2.0"
+  }
+}

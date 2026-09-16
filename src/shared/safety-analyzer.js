@@ -193,20 +193,18 @@
     targetLocalSignals,
     networkEvidence,
     browserObservation,
-    reputationSignals
+    reputationSignals,
+    contextObj
   ) {
     var tierA = [];
     var tierB = [];
+    var tierC = []; // For mismatch, treat as tier C structurally
     var tierD = [];
     var limitations = [
       "Analysis based on URL structure — page content was not inspected",
       "Local heuristics cannot confirm safety or malicious intent"
     ];
-    if (!reputationSignals || reputationSignals.status === 'REPUTATION_NOT_ENABLED') {
-      limitations.push("Reputation checking not enabled");
-    } else if (reputationSignals.status === 'REPUTATION_UNAVAILABLE') {
-      limitations.push("Reputation checking currently unavailable (network error)");
-    }
+
 
     // --- STEP 1: Map ORIGINAL URL riskSignals to tiers ---
     if (riskSignals && riskSignals.signals) {
@@ -442,9 +440,39 @@
       limitations.push("No prior browser navigation observation available");
     }
 
-    // --- STEP 5: Determine status from Tier B signals ---
+    // --- STEP 4.2: Evaluate Claim ↔ Destination Mismatch ---
+    var verifiedDestination = null;
+    var mismatchSource = null;
+    if (networkEvidence && networkEvidence.status === 'HTTP_REDIRECT_OBSERVED' && networkEvidence.redirectTarget) {
+      verifiedDestination = networkEvidence.redirectTarget;
+      mismatchSource = 'network';
+    } else if (browserObservation && browserObservation.status === 'STRONG_CORRELATION' && browserObservation.observedLatestUrl) {
+      verifiedDestination = browserObservation.observedLatestUrl;
+      mismatchSource = 'browser_observation';
+    }
+
+    if (verifiedDestination && contextObj && BTL.claimDestinationAnalyzer) {
+      var mismatch = BTL.claimDestinationAnalyzer.evaluateMismatch(contextObj, verifiedDestination);
+      if (mismatch) {
+        tierC.push({
+          id: 'CLAIM_DESTINATION_MISMATCH',
+          tier: 'C',
+          dimension: 'claim_destination',
+          urlContext: 'network_target_url',
+          source: mismatchSource,
+          epistemic: 'VERIFIED',
+          label: "Link and destination don't match",
+          detail: "The link mentions " + mismatch.displayBrand + ", but the verified destination is " + getHostname(verifiedDestination) + "."
+        });
+      }
+    }
+
+    // --- STEP 5: Determine status from Tier B/C signals ---
     var activeDimensions = {};
     tierB.forEach(function (s) {
+      if (s.dimension) activeDimensions[s.dimension] = true;
+    });
+    tierC.forEach(function (s) {
       if (s.dimension) activeDimensions[s.dimension] = true;
     });
     var dimensionCount = Object.keys(activeDimensions).length;
@@ -464,9 +492,9 @@
         label: 'Known threat detected',
         detail: 'This link was flagged as a known threat (' + (reputationSignals.threatTypes ? reputationSignals.threatTypes.join(', ') : 'malicious') + ').'
       });
-    } else if (tierB.length === 0) {
+    } else if (tierB.length === 0 && tierC.length === 0) {
       status = (tierA.length > 0) ? 'INFORMATIONAL' : 'NO_SIGNALS_DETECTED';
-    } else if (dimensionCount >= 2) {
+    } else if (dimensionCount >= 2 || tierC.length > 0) {
       status = 'UNUSUAL_CHARACTERISTICS';
     } else {
       status = 'INFORMATIONAL';
@@ -475,6 +503,7 @@
     // --- STEP 6: Assemble and return ---
     var allSignals = []
       .concat(tierD)
+      .concat(tierC)
       .concat(tierB.filter(function(s) { return s.urlContext === 'original_url'; }))
       .concat(tierB.filter(function(s) { return s.urlContext === 'network_target_url'; }))
       .concat(tierA.filter(function(s) { return s.urlContext === 'original_url'; }))

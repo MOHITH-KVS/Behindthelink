@@ -5,7 +5,9 @@ const tests = [
   'test/test-safety-ui.js',
   'test/test-canonicalization.js',
   'test/test-expression-generator.js',
-  'test/test-reputation-engine.js'
+  'test/test-reputation-engine.js',
+  'test/test-context-extractor.js',
+  'test/test-claim-destination.js'
 ];
 
 let allPassed = true;
