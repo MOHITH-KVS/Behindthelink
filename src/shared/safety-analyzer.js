@@ -467,38 +467,56 @@
       }
     }
 
+    // --- STEP 4.3: Evaluate Deception/Pressure Signals ---
+    if (contextObj && BTL.deceptionAnalyzer) {
+      var deceptionSignals = BTL.deceptionAnalyzer.analyzeDeception(contextObj);
+      tierC = tierC.concat(deceptionSignals);
+    }
+
     // --- STEP 5: Determine status from Tier B/C signals ---
     var activeDimensions = {};
     tierB.forEach(function (s) {
       if (s.dimension) activeDimensions[s.dimension] = true;
     });
+    var hasMismatch = false;
     tierC.forEach(function (s) {
       if (s.dimension) activeDimensions[s.dimension] = true;
+      if (s.id === 'CLAIM_DESTINATION_MISMATCH') hasMismatch = true;
     });
     var dimensionCount = Object.keys(activeDimensions).length;
-
-    var status;
+    var localStatus;
+    var reputationStatus = 'NO_REPUTATION_VERDICT';
     
     // --- STEP 4.5: Check Reputation (Tier D) ---
-    if (reputationSignals && reputationSignals.status === 'REPUTATION_CONFIRMED_THREAT') {
-      status = 'STRONG_WARNING';
-      tierD.push({
-        id: 'REPUTATION_CONFIRMED_THREAT',
-        tier: 'D',
-        dimension: 'reputation',
-        urlContext: 'reputation_check',
-        source: 'reputation_engine',
-        epistemic: 'VERIFIED',
-        label: 'Known threat detected',
-        detail: 'This link was flagged as a known threat (' + (reputationSignals.threatTypes ? reputationSignals.threatTypes.join(', ') : 'malicious') + ').'
-      });
-    } else if (tierB.length === 0 && tierC.length === 0) {
-      status = (tierA.length > 0) ? 'INFORMATIONAL' : 'NO_SIGNALS_DETECTED';
-    } else if (dimensionCount >= 2 || tierC.length > 0) {
-      status = 'UNUSUAL_CHARACTERISTICS';
-    } else {
-      status = 'INFORMATIONAL';
+    if (reputationSignals) {
+      if (reputationSignals.status === 'REPUTATION_CONFIRMED_THREAT') {
+        reputationStatus = 'KNOWN_THREAT';
+        tierD.push({
+          id: 'REPUTATION_CONFIRMED_THREAT',
+          tier: 'D',
+          dimension: 'reputation',
+          urlContext: 'reputation_check',
+          source: 'reputation_engine',
+          epistemic: 'VERIFIED',
+          label: 'Known threat detected',
+          detail: 'This link was flagged as a known threat (' + (reputationSignals.threatTypes ? reputationSignals.threatTypes.join(', ') : 'malicious') + ').'
+        });
+      } else if (reputationSignals.status === 'REPUTATION_NO_MATCH') {
+        reputationStatus = 'NO_KNOWN_THREAT';
+      } else if (reputationSignals.status === 'REPUTATION_UNAVAILABLE') {
+        reputationStatus = 'REPUTATION_UNAVAILABLE';
+      }
     }
+
+    if (tierB.length === 0 && tierC.length === 0) {
+      localStatus = (tierA.length > 0) ? 'INFORMATIONAL' : 'NO_SIGNALS_DETECTED';
+    } else if (dimensionCount >= 2 || hasMismatch) {
+      localStatus = 'UNUSUAL_CHARACTERISTICS';
+    } else {
+      localStatus = 'INFORMATIONAL';
+    }
+
+    var status = (reputationStatus === 'KNOWN_THREAT') ? 'STRONG_WARNING' : localStatus;
 
     // --- STEP 6: Assemble and return ---
     var allSignals = []
@@ -509,9 +527,17 @@
       .concat(tierA.filter(function(s) { return s.urlContext === 'original_url'; }))
       .concat(tierA.filter(function(s) { return s.urlContext === 'network_target_url'; }));
 
+    var userGuidance = null;
+    if (BTL.assessmentAggregator) {
+       userGuidance = BTL.assessmentAggregator.aggregate(allSignals, localStatus);
+    }
+
     return {
       status: status,
+      localStatus: localStatus,
+      reputationStatus: reputationStatus,
       signals: allSignals,
+      userGuidance: userGuidance,
       assessmentBasis: assessmentBasis,
       limitations: limitations,
       checkedAt: Date.now()

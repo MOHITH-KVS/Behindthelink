@@ -124,48 +124,62 @@ runTest("UI-002: Link Type shows Direct link when no signals", () => {
   assert.ok(textMains.some(t => t.textContent.includes('Direct link')));
 });
 
-runTest("UI-003: Callouts for HTTPS and Suspicious Ext", () => {
+runTest("UI-003: Safety bullet list renders correctly", () => {
   const card = getCard({
     originalUrl: 'http://example.com/file.exe',
     safetyEvidence: { 
       status: 'UNUSUAL_CHARACTERISTICS', 
-      signals: [
-        { id: 'HTTP_NOT_HTTPS' },
-        { id: 'SUSPICIOUS_FILE_EXT' }
-      ] 
+      signals: [],
+      userGuidance: {
+        displaySignals: [{ id: 'SUSPICIOUS_FILE_EXT', label: 'Suspicious file extension' }],
+        whyText: null,
+        actionText: null
+      }
     }
   });
-  const callouts = findElementsByClass(card, 'btl-callout-title');
-  const texts = callouts.map(c => c.textContent);
-  assert.ok(texts.some(t => t.includes('Executable download')));
-  assert.ok(!texts.some(t => t.includes('HTTPS'))); // Should NOT have HTTPS since it's HTTP_NOT_HTTPS
+  const lists = findElementsByClass(card, 'btl-bullet-list');
+  const bullets = lists[0].children.map(c => c.textContent);
+  assert.ok(bullets.some(t => t.includes('Suspicious file extension')));
 });
 
-runTest("UI-004: Specific Callout for HTTPS exists on secure link", () => {
+runTest("UI-004: Why should I care renders correctly", () => {
   const card = getCard({
     originalUrl: 'https://example.com',
-    safetyEvidence: { status: 'NO_SIGNALS_DETECTED', signals: [] }
-  });
-  const callouts = findElementsByClass(card, 'btl-callout-title');
-  const texts = callouts.map(c => c.textContent);
-  assert.ok(texts.some(t => t.includes('HTTPS')));
-});
-
-runTest("UI-005: Why should I care renders correctly", () => {
-  const card = getCard({
-    originalUrl: 'https://example.com?utm_source=test',
     safetyEvidence: { 
-      status: 'INFORMATIONAL', 
-      signals: [{ id: 'HAS_TRACKING_PARAMS', tier: 'A', detail: 'test' }] 
+      status: 'UNUSUAL_CHARACTERISTICS', 
+      signals: [],
+      userGuidance: {
+        displaySignals: [],
+        whyText: 'This is a test rationale.',
+        actionText: null
+      }
     }
   });
   const labels = findElementsByClass(card, 'btl-label');
   assert.ok(labels.some(l => l.textContent === 'WHY SHOULD I CARE?'));
   
-  const lists = findElementsByClass(card, 'btl-bullet-list');
-  // First list is under why care, second is under checks
-  const whyCareTexts = lists[0].children.map(c => c.textContent);
-  assert.ok(whyCareTexts.some(t => t.includes('tracking')));
+  const whyTexts = findElementsByClass(card, 'btl-why-text');
+  assert.ok(whyTexts.some(t => t.textContent === 'This is a test rationale.'));
+});
+
+runTest("UI-005: What should I do renders correctly", () => {
+  const card = getCard({
+    originalUrl: 'https://example.com',
+    safetyEvidence: { 
+      status: 'UNUSUAL_CHARACTERISTICS', 
+      signals: [],
+      userGuidance: {
+        displaySignals: [],
+        whyText: null,
+        actionText: 'Check the destination domain before continuing.'
+      }
+    }
+  });
+  const labels = findElementsByClass(card, 'btl-label');
+  assert.ok(labels.some(l => l.textContent === 'WHAT SHOULD I DO?'));
+  
+  const actionTexts = findElementsByClass(card, 'btl-why-text'); // They use the same class for text rendering
+  assert.ok(actionTexts.some(t => t.textContent === 'Check the destination domain before continuing.'));
 });
 
 console.log(`\nResults: ${passed}/${total} passed`);

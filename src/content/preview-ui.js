@@ -15,12 +15,14 @@
   var shadowRoot = null;
   var cardElement = null;
   var shouldBeVisible = false;
+  var currentLinkElement = null;
 
   // ───────────────────────────────────────────────────
   //  Public API
   // ───────────────────────────────────────────────────
 
   function show(linkElement, analysisResult, isLoading, contextObj) {
+    currentLinkElement = linkElement;
     ensureHost();
     
     var url = BTL.getResolvedUrl(linkElement);
@@ -53,8 +55,9 @@
   }
 
   function updateNetworkResult(payload) {
-    if (!cardElement || !shouldBeVisible) return;
+    if (!cardElement || !shouldBeVisible || !currentLinkElement) return;
     render(payload, false);
+    positionCard(currentLinkElement);
   }
 
   // ───────────────────────────────────────────────────
@@ -133,45 +136,42 @@
     destBlock.className = 'btl-section';
     var destLabel = document.createElement('div');
     destLabel.className = 'btl-label';
+    destLabel.textContent = 'DESTINATION';
     var destUrl = document.createElement('div');
     destUrl.className = 'btl-dest-url';
     var destEvidence = document.createElement('div');
     
     if (isLoading) {
-      destLabel.textContent = 'WHERE IT GOES';
       destUrl.textContent = 'Checking destination…';
       destUrl.style.color = '#6b7280';
       destEvidence.className = 'btl-evidence';
     } else if (net.status === 'HTTP_REDIRECT_OBSERVED' && net.redirectTarget) {
-      destLabel.textContent = 'OPENS';
       destUrl.textContent = formatTargetUrl(net.redirectTarget);
-      destEvidence.textContent = '✓ HTTP verified';
-      destEvidence.className = 'btl-evidence btl-evidence-success';
+      destEvidence.textContent = '✓ Destination verified';
+      destEvidence.className = 'btl-evidence btl-evidence-neutral';
     } else if (net.status === 'NO_REDIRECT_OBSERVED') {
-      destLabel.textContent = 'OPENS';
       destUrl.textContent = domain;
-      destEvidence.textContent = '✓ HTTP verified';
-      destEvidence.className = 'btl-evidence btl-evidence-success';
+      destEvidence.textContent = '✓ Destination verified';
+      destEvidence.className = 'btl-evidence btl-evidence-neutral';
     } else if (obs.status === 'STRONG_CORRELATION' && obs.observedLatestUrl) {
-      destLabel.textContent = 'OPENS';
       destUrl.textContent = formatTargetUrl(obs.observedLatestUrl);
-      destEvidence.textContent = '✓ Previously observed';
-      destEvidence.className = 'btl-evidence btl-evidence-success';
+      destEvidence.textContent = 'Previously observed';
+      destEvidence.className = 'btl-evidence btl-evidence-neutral';
     } else if (hasEmbedded) {
-      destLabel.textContent = 'WHERE IT GOES';
       destUrl.textContent = formatTargetUrl(locals.embeddedCandidates[0]);
-      destEvidence.textContent = '⚠ Predicted/likely';
-      destEvidence.className = 'btl-evidence btl-evidence-warning';
+      destEvidence.textContent = 'Likely destination';
+      destEvidence.className = 'btl-evidence btl-evidence-neutral';
     } else {
-      destLabel.textContent = 'WHERE IT GOES';
       destUrl.textContent = domain;
-      destEvidence.textContent = '❌ Could not verify';
+      destEvidence.textContent = 'Could not verify destination';
       destEvidence.className = 'btl-evidence btl-evidence-neutral';
     }
     
     destBlock.appendChild(destLabel);
     destBlock.appendChild(destUrl);
-    destBlock.appendChild(destEvidence);
+    if (!isLoading) {
+      destBlock.appendChild(destEvidence);
+    }
     cardElement.appendChild(destBlock);
 
     if (isLoading) {
@@ -181,14 +181,137 @@
 
     cardElement.style.pointerEvents = 'auto';
 
-    // 3. Link Type
+    // 3. Safety
+    var safetyBlock = document.createElement('div');
+    safetyBlock.className = 'btl-section';
+    var safetyLabel = document.createElement('div');
+    safetyLabel.className = 'btl-label';
+    safetyLabel.textContent = 'SAFETY';
+    safetyBlock.appendChild(safetyLabel);
+    
+    if (safety.reputationStatus && safety.reputationStatus !== 'REPUTATION_NOT_ENABLED') {
+      var repStatusEl = document.createElement('div');
+      repStatusEl.className = 'btl-safety-status';
+      var repIcon = document.createElement('span');
+      var repText = document.createElement('span');
+      
+      switch (safety.reputationStatus) {
+        case 'KNOWN_THREAT':
+          repIcon.textContent = '🚨'; repIcon.style.color = '#dc2626';
+          repText.textContent = 'Known threat reported'; repText.style.color = '#dc2626';
+          break;
+        case 'NO_KNOWN_THREAT':
+          repIcon.textContent = '✓'; repIcon.style.color = '#10b981';
+          repText.textContent = 'No known threat reported'; repText.style.color = '#6b7280';
+          break;
+        case 'REPUTATION_UNAVAILABLE':
+        case 'NO_REPUTATION_VERDICT':
+        default:
+          repIcon.textContent = '—'; repIcon.style.color = '#9ca3af';
+          repText.textContent = 'No safety verdict'; repText.style.color = '#9ca3af';
+          break;
+      }
+      repStatusEl.appendChild(repIcon);
+      repStatusEl.appendChild(repText);
+      safetyBlock.appendChild(repStatusEl);
+    }
+
+    var localStatusEl = document.createElement('div');
+    localStatusEl.className = 'btl-safety-status';
+    
+    var sIcon = document.createElement('span');
+    var sText = document.createElement('span');
+    
+    var localStatus = safety.localStatus || safety.status;
+    
+    switch (localStatus) {
+      case 'NO_SIGNALS_DETECTED':
+        sIcon.textContent = '✓'; sIcon.style.color = '#10b981';
+        sText.textContent = 'Nothing unusual found'; sText.style.color = '#6b7280';
+        break;
+      case 'INFORMATIONAL':
+        sIcon.textContent = 'ℹ'; sIcon.style.color = '#64748b';
+        sText.textContent = 'Some things to know'; sText.style.color = '#64748b';
+        break;
+      case 'UNUSUAL_CHARACTERISTICS':
+        sIcon.textContent = '⚠'; sIcon.style.color = '#d97706';
+        sText.textContent = 'Some unusual characteristics'; sText.style.color = '#d97706';
+        break;
+      case 'STRONG_WARNING':
+        sIcon.textContent = '🚨'; sIcon.style.color = '#dc2626';
+        sText.textContent = 'Known threat reported'; sText.style.color = '#dc2626';
+        break;
+    }
+    localStatusEl.appendChild(sIcon);
+    localStatusEl.appendChild(sText);
+    
+    // Only append localStatus if we don't have a KNOWN_THREAT overriding everything, 
+    // or if we want to show it alongside. The spec says:
+    // "An unusual local result must not be overridden by a clean reputation result."
+    // "KNOWN_THREAT always supersedes all other UI states"
+    if (safety.reputationStatus !== 'KNOWN_THREAT') {
+      safetyBlock.appendChild(localStatusEl);
+    }
+
+    var userGuidance = payload.safetyEvidence ? payload.safetyEvidence.userGuidance : null;
+    
+    if (userGuidance && userGuidance.displaySignals && userGuidance.displaySignals.length > 0) {
+      var displayList = document.createElement('ul');
+      displayList.className = 'btl-bullet-list';
+      displayList.style.marginTop = '6px';
+      displayList.style.color = '#4b5563';
+      
+      userGuidance.displaySignals.forEach(function(s) {
+        var li = document.createElement('li');
+        li.textContent = s.label;
+        displayList.appendChild(li);
+      });
+      safetyBlock.appendChild(displayList);
+    }
+    
+    cardElement.appendChild(safetyBlock);
+
+    // 4. Why should I care?
+    if (userGuidance && userGuidance.whyText) {
+      var whyBlock = document.createElement('div');
+      whyBlock.className = 'btl-section';
+      var whyLabel = document.createElement('div');
+      whyLabel.className = 'btl-label';
+      whyLabel.textContent = 'WHY SHOULD I CARE?';
+      whyBlock.appendChild(whyLabel);
+      
+      var whyText = document.createElement('div');
+      whyText.className = 'btl-why-text';
+      whyText.textContent = userGuidance.whyText;
+      whyBlock.appendChild(whyText);
+      cardElement.appendChild(whyBlock);
+    }
+    
+    // 5. What should I do?
+    if (userGuidance && userGuidance.actionText) {
+      var actionBlock = document.createElement('div');
+      actionBlock.className = 'btl-section';
+      var actionLabel = document.createElement('div');
+      actionLabel.className = 'btl-label';
+      actionLabel.textContent = 'WHAT SHOULD I DO?';
+      actionBlock.appendChild(actionLabel);
+      
+      var actionText = document.createElement('div');
+      actionText.className = 'btl-why-text';
+      actionText.textContent = userGuidance.actionText;
+      actionBlock.appendChild(actionText);
+      
+      cardElement.appendChild(actionBlock);
+    }
+
+    // 6. Link Type
     var linkTypes = [];
     if (hasSignal(signals, 'REDIRECTS_THROUGH_SHORTENER')) linkTypes.push('Shortened link');
     if (hasSignal(signals, 'REDIRECTS_TO_DIFFERENT_DOMAIN')) linkTypes.push('Redirecting link');
     if (hasSignal(signals, 'HAS_TRACKING_PARAMS')) linkTypes.push('Tracking link');
     if (hasSignal(signals, 'HAS_AFFILIATE')) linkTypes.push('Affiliate-style link');
     
-    var typeText = linkTypes.length > 0 ? linkTypes.join(' + ') : 'Direct link';
+    var typeText = linkTypes.length > 0 ? linkTypes.join(' · ') : 'Direct link';
     
     var typeBlock = document.createElement('div');
     typeBlock.className = 'btl-section';
@@ -202,172 +325,7 @@
     typeBlock.appendChild(typeVal);
     cardElement.appendChild(typeBlock);
 
-    // 4. Specific Callouts
-    var callouts = [];
-    if (!hasSignal(signals, 'HTTP_NOT_HTTPS')) {
-      callouts.push({ icon: '✓', title: 'HTTPS', desc: 'The connection is encrypted. HTTPS does not by itself prove that the website is legitimate.', color: '#10b981' });
-    }
-    if (hasSignal(signals, 'SUSPICIOUS_FILE_EXT')) {
-      callouts.push({ icon: '⚠', title: 'Executable download', desc: 'This link appears to point to an executable file. Only open it if you expected this download.', color: '#d97706' });
-    }
-    if (hasSignal(signals, 'USERINFO_IN_URL')) {
-      callouts.push({ icon: '⚠', title: 'Embedded credentials', desc: 'This URL contains username/password information.', color: '#d97706' });
-    }
-    if (hasSignal(signals, 'SENSITIVE_ACTION_PATH') || hasSignal(signals, 'CONTEXT_LOGIN') || hasSignal(signals, 'CONTEXT_PAYMENT') || hasSignal(signals, 'CONTEXT_VERIFY') || hasSignal(signals, 'CONTEXT_PASSWORD') || hasSignal(signals, 'CONTEXT_ACCOUNT')) {
-      callouts.push({ icon: 'ℹ', title: 'Sensitive action', desc: 'This destination appears to involve login, verification, payment, or another sensitive action.', color: '#3b82f6' });
-    }
-
-    callouts.forEach(function(c) {
-      var cb = document.createElement('div');
-      cb.className = 'btl-callout';
-      
-      var cTitle = document.createElement('div');
-      cTitle.className = 'btl-callout-title';
-      cTitle.style.color = c.color;
-      var cIcon = document.createElement('span');
-      cIcon.textContent = c.icon + ' ';
-      cTitle.appendChild(cIcon);
-      cTitle.appendChild(document.createTextNode(c.title));
-      
-      var cDesc = document.createElement('div');
-      cDesc.className = 'btl-callout-desc';
-      cDesc.textContent = c.desc;
-      
-      cb.appendChild(cTitle);
-      cb.appendChild(cDesc);
-      cardElement.appendChild(cb);
-    });
-
-    // 5. Safety
-    var safetyBlock = document.createElement('div');
-    safetyBlock.className = 'btl-section';
-    var safetyLabel = document.createElement('div');
-    safetyLabel.className = 'btl-label';
-    safetyLabel.textContent = 'SAFETY';
-    safetyBlock.appendChild(safetyLabel);
-    
-    var statusEl = document.createElement('div');
-    statusEl.className = 'btl-safety-status';
-    
-    var sIcon = document.createElement('span');
-    var sText = document.createElement('span');
-    
-    var mismatchSignal = null;
-    for (var k = 0; k < signals.length; k++) {
-      if (signals[k].id === 'CLAIM_DESTINATION_MISMATCH') {
-        mismatchSignal = signals[k];
-        break;
-      }
-    }
-
-    if (mismatchSignal) {
-      sIcon.textContent = '⚠'; sIcon.style.color = '#d97706';
-      sText.textContent = mismatchSignal.label; sText.style.color = '#d97706';
-      
-      statusEl.appendChild(sIcon);
-      statusEl.appendChild(sText);
-      safetyBlock.appendChild(statusEl);
-
-      var mismatchDesc = document.createElement('div');
-      mismatchDesc.className = 'btl-mismatch-desc';
-      mismatchDesc.style.marginTop = '6px';
-      mismatchDesc.style.fontSize = '12px';
-      mismatchDesc.style.color = '#4b5563';
-      mismatchDesc.textContent = mismatchSignal.detail;
-      safetyBlock.appendChild(mismatchDesc);
-    } else {
-      switch (safety.status) {
-        case 'NO_SIGNALS_DETECTED':
-          sIcon.textContent = '✓'; sIcon.style.color = '#10b981';
-          sText.textContent = 'Nothing unusual found'; sText.style.color = '#6b7280';
-          break;
-        case 'INFORMATIONAL':
-          sIcon.textContent = 'ℹ'; sIcon.style.color = '#64748b';
-          sText.textContent = 'Some things to know'; sText.style.color = '#64748b';
-          break;
-        case 'UNUSUAL_CHARACTERISTICS':
-          sIcon.textContent = '⚠'; sIcon.style.color = '#d97706';
-          sText.textContent = 'Some unusual characteristics'; sText.style.color = '#d97706';
-          break;
-        case 'STRONG_WARNING':
-          sIcon.textContent = '🚨'; sIcon.style.color = '#dc2626';
-          sText.textContent = 'Known threat reported'; sText.style.color = '#dc2626';
-          break;
-      }
-      statusEl.appendChild(sIcon);
-      statusEl.appendChild(sText);
-      safetyBlock.appendChild(statusEl);
-    }
-    
-    cardElement.appendChild(safetyBlock);
-
-    // 6. Why should I care?
-    if (signals.length > 0) {
-      var whyBlock = document.createElement('div');
-      whyBlock.className = 'btl-section';
-      var whyLabel = document.createElement('div');
-      whyLabel.className = 'btl-label';
-      whyLabel.textContent = 'WHY SHOULD I CARE?';
-      whyBlock.appendChild(whyLabel);
-      
-      var whyText = document.createElement('div');
-      whyText.className = 'btl-why-text';
-      
-      var reasons = [];
-      if (hasSignal(signals, 'REDIRECTS_THROUGH_SHORTENER')) {
-        reasons.push("The final destination is hidden behind a URL-shortening service.");
-      }
-      if (hasSignal(signals, 'HAS_TRACKING_PARAMS')) {
-        reasons.push("Parameters in the URL are commonly used for campaign/attribution tracking.");
-      }
-      var hasStructural = false;
-      for (var j = 0; j < signals.length; j++) {
-        if (signals[j].tier === 'B' && signals[j].id !== 'HTTP_NOT_HTTPS' && signals[j].id !== 'SUSPICIOUS_FILE_EXT') {
-          hasStructural = true;
-          break;
-        }
-      }
-      if (hasStructural) {
-        reasons.push("The URL contains unusual characteristics. This does not prove it is malicious.");
-      }
-      
-      if (hasSignal(signals, 'CLAIM_DESTINATION_MISMATCH')) {
-        reasons.push("The text of a link can describe one service while the link leads somewhere else.");
-      }
-      
-      if (reasons.length === 0 && signals.length > 0) {
-        reasons.push(signals[0].detail); // Fallback to raw human-readable signal detail
-      }
-      
-      var ul = document.createElement('ul');
-      ul.className = 'btl-bullet-list';
-      reasons.forEach(function(r) {
-        var li = document.createElement('li');
-        li.textContent = r;
-        ul.appendChild(li);
-      });
-      whyBlock.appendChild(ul);
-      cardElement.appendChild(whyBlock);
-    }
-    
-    // 6b. What should I do?
-    if (hasSignal(signals, 'CLAIM_DESTINATION_MISMATCH')) {
-      var actionBlock = document.createElement('div');
-      actionBlock.className = 'btl-section';
-      var actionLabel = document.createElement('div');
-      actionLabel.className = 'btl-label';
-      actionLabel.textContent = 'WHAT SHOULD I DO?';
-      actionBlock.appendChild(actionLabel);
-      
-      var actionText = document.createElement('div');
-      actionText.className = 'btl-why-text';
-      actionText.textContent = "Check the destination domain before entering information.";
-      actionBlock.appendChild(actionText);
-      
-      cardElement.appendChild(actionBlock);
-    }
-
-    // 7. What we checked
+    // 7. What we checked / More info (Progressive Disclosure)
     var checksWrapper = document.createElement('details');
     checksWrapper.className = 'btl-details';
     var checksSummary = document.createElement('summary');
@@ -379,17 +337,14 @@
     
     var cList = document.createElement('ul');
     cList.className = 'btl-bullet-list';
-    cList.appendChild(createLi('Link text'));
-    cList.appendChild(createLi('Link context'));
-    cList.appendChild(createLi('URL structure'));
-    cList.appendChild(createLi('Tracking parameters'));
-    if (net.status !== 'FAILED') {
-      cList.appendChild(createLi('Redirect behavior'));
+    cList.appendChild(createLi('Link text and context'));
+    if (net.status === 'FAILED') {
+      cList.appendChild(createLi('! Destination could not be verified'));
+    } else {
       cList.appendChild(createLi('Destination'));
+      cList.appendChild(createLi('Redirect behavior'));
     }
-    if (obs.status !== 'NONE') {
-      cList.appendChild(createLi('Browser navigation'));
-    }
+    cList.appendChild(createLi('URL characteristics'));
     checksContent.appendChild(cList);
     
     var limitsLabel = document.createElement('div');
@@ -401,7 +356,6 @@
     limList.className = 'btl-bullet-list';
     limList.appendChild(createLi('We do not guarantee that a website is safe.'));
     limList.appendChild(createLi('We do not determine whether a page contains malware.'));
-    limList.appendChild(createLi('We do not currently use an external reputation database.'));
     checksContent.appendChild(limList);
     
     checksWrapper.appendChild(checksContent);
@@ -410,6 +364,8 @@
     // 8. More info
     var moreWrapper = document.createElement('details');
     moreWrapper.className = 'btl-details';
+    moreWrapper.style.marginTop = '4px';
+    moreWrapper.style.borderTop = 'none';
     var moreSummary = document.createElement('summary');
     moreSummary.textContent = 'More info ▾';
     moreWrapper.appendChild(moreSummary);
@@ -450,19 +406,41 @@
   function positionCard(linkElement) {
     var linkRect = linkElement.getBoundingClientRect();
     var cardW = cardElement.offsetWidth || BTL.CARD_WIDTH || 320;
+    // Important: We must use offsetHeight to get the true rendered height
     var cardH = cardElement.offsetHeight || 300;
+    
     var gap = BTL.CARD_GAP || 8;
-    var pad = BTL.VIEWPORT_PADDING || 16;
+    var pad = BTL.VIEWPORT_PADDING || 12; // Adjusted to a safe 12px
     var vw = window.innerWidth;
     var vh = window.innerHeight;
 
-    var top = linkRect.bottom + gap;
-    if (top + cardH > vh - pad) top = linkRect.top - gap - cardH;
-    if (top < pad) top = pad;
+    var spaceBelow = vh - linkRect.bottom;
+    var spaceAbove = linkRect.top;
 
+    var top;
+    // 1. If there is enough space below, put it below
+    if (spaceBelow >= cardH + gap + pad) {
+      top = linkRect.bottom + gap;
+    } 
+    // 2. If not enough space below, but enough space above, put it above
+    else if (spaceAbove >= cardH + gap + pad) {
+      top = linkRect.top - gap - cardH;
+    } 
+    // 3. Neither has enough space. Choose the side with more space
+    else {
+      if (spaceBelow >= spaceAbove) {
+        top = linkRect.bottom + gap;
+      } else {
+        top = linkRect.top - gap - cardH;
+      }
+    }
+
+    // Clamp top to viewport bounds
+    top = Math.max(pad, Math.min(top, vh - pad - cardH));
+
+    // Handle horizontal bounds
     var left = linkRect.left;
-    if (left + cardW > vw - pad) left = vw - pad - cardW;
-    if (left < pad) left = pad;
+    left = Math.max(pad, Math.min(left, vw - pad - cardW));
 
     hostElement.style.top = Math.round(top) + 'px';
     hostElement.style.left = Math.round(left) + 'px';
@@ -474,7 +452,10 @@
 
     return (
       ':host{all:initial;}' +
-      '.btl-card{width:' + w + 'px;background:#ffffff;border:1px solid rgba(0,0,0,0.08);border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08),0 8px 24px rgba(0,0,0,0.06);padding:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13px;line-height:1.4;color:#1f2937;box-sizing:border-box;opacity:0;transform:translateY(4px);transition:opacity ' + dur + 'ms ease-out,transform ' + dur + 'ms ease-out;}' +
+      '.btl-card{width:' + w + 'px;max-height:min(480px, 70vh);overflow-y:auto;background:#ffffff;border:1px solid rgba(0,0,0,0.08);border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08),0 8px 24px rgba(0,0,0,0.06);padding:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13px;line-height:1.4;color:#1f2937;box-sizing:border-box;opacity:0;transform:translateY(4px);transition:opacity ' + dur + 'ms ease-out,transform ' + dur + 'ms ease-out;}' +
+      '.btl-card::-webkit-scrollbar{width:6px;}' +
+      '.btl-card::-webkit-scrollbar-track{background:transparent;}' +
+      '.btl-card::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15);border-radius:4px;}' +
       '.btl-card.btl-visible{opacity:1;transform:translateY(0);}' +
       '.btl-header{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600;color:#111827;margin-bottom:12px;overflow-wrap:break-word;word-break:break-all;}' +
       '.btl-section{margin-bottom:12px;}' +

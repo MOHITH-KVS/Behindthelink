@@ -13,7 +13,9 @@ importScripts(
   '../content/affiliate-registry.js',
   '../content/url-analyzer.js',
   '../shared/claim-destination-analyzer.js',
+  '../shared/deception-analyzer.js',
   '../shared/safety-analyzer.js',
+  '../shared/assessment-aggregator.js',
   '../shared/reputation/canonicalization.js',
   '../shared/reputation/expression-generator.js',
   '../shared/reputation/hash-utils.js',
@@ -169,11 +171,11 @@ async function resolveDestination(originalUrlString, requestId, contextObj) {
   }
 
   let reputationSignals = { status: 'REPUTATION_NOT_ENABLED' };
-  // MVP Phase 5: Reputation checking bypassed. No external network requests allowed.
-  // if (BTL.reputationEngine) {
-  //   const repTarget = networkEvidence.status === 'HTTP_REDIRECT_OBSERVED' ? networkEvidence.redirectTarget : null;
-  //   reputationSignals = await BTL.reputationEngine.checkReputation(originalUrlString, repTarget);
-  // }
+  
+  if (BTL.reputationEngine) {
+    const repTarget = networkEvidence.status === 'HTTP_REDIRECT_OBSERVED' ? networkEvidence.redirectTarget : null;
+    reputationSignals = await BTL.reputationEngine.checkReputation(originalUrlString, repTarget);
+  }
 
   const safetyEvidence = BTL.safetyAnalyzer ? BTL.safetyAnalyzer.computeSafetyEvidence(
     originalUrlString,

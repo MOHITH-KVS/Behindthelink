@@ -257,5 +257,38 @@
     </div>
   </div>
 
+  <div class="test-group" style="position: relative; height: 600px; border: 1px dashed #ccc; margin-top: 50px;">
+    <h2>10. EDGE POSITIONING TESTS (Viewport Collision)</h2>
+    <div style="position: absolute; top: 10px; left: 10px;">
+      <a href="https://example.com/top-left">Top Left</a>
+    </div>
+    <div style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%);">
+      <a href="https://example.com/top-center">Top Center</a>
+    </div>
+    <div style="position: absolute; top: 10px; right: 10px;">
+      <a href="https://example.com/top-right">Top Right</a>
+    </div>
+    
+    <div style="position: absolute; top: 50%; left: 10px; transform: translateY(-50%);">
+      <a href="https://example.com/left-edge">Left Edge</a>
+    </div>
+    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">
+      <a href="https://example.com/center">Center</a>
+    </div>
+    <div style="position: absolute; top: 50%; right: 10px; transform: translateY(-50%);">
+      <a href="https://example.com/right-edge">Right Edge</a>
+    </div>
+
+    <div style="position: absolute; bottom: 10px; left: 10px;">
+      <a href="https://example.com/bottom-left">Bottom Left</a>
+    </div>
+    <div style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);">
+      <a href="https://example.com/bottom-center">Bottom Center</a>
+    </div>
+    <div style="position: absolute; bottom: 10px; right: 10px;">
+      <a href="https://example.com/bottom-right">Bottom Right</a>
+    </div>
+  </div>
+
 </body>
 </html>

@@ -2,12 +2,14 @@ const { execSync } = require('child_process');
 const tests = [
   'test/test-data-model.js',
   'test/test-safety-analyzer.js',
-  'test/test-safety-ui.js',
+  'test/test-ux-refinement.js',
   'test/test-canonicalization.js',
   'test/test-expression-generator.js',
   'test/test-reputation-engine.js',
   'test/test-context-extractor.js',
-  'test/test-claim-destination.js'
+  'test/test-claim-destination.js',
+  'test/test-deception-analyzer.js',
+  'test/test-combined-assessment.js'
 ];
 
 let allPassed = true;
