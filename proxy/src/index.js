@@ -97,6 +97,22 @@ function isFresh(data) {
   return (latestExp - Date.now()) > 60000;
 }
 
+const ipRateLimiter = new Map();
+const RATE_LIMIT_WINDOW = 60000;
+const RATE_LIMIT_MAX = 100;
+
+function checkRateLimit(ip) {
+  if (!ip) return true;
+  const now = Date.now();
+  let data = ipRateLimiter.get(ip);
+  if (!data || now - data.startTime > RATE_LIMIT_WINDOW) {
+    data = { count: 0, startTime: now };
+  }
+  data.count++;
+  ipRateLimiter.set(ip, data);
+  return data.count <= RATE_LIMIT_MAX;
+}
+
 export default {
   async fetch(request, env, ctx) {
     const origin = request.headers.get('Origin') || '';
@@ -114,6 +130,14 @@ export default {
 
     if (!allowedOrigins.includes(origin)) {
       return new Response('Forbidden', { status: 403, headers: corsHeaders });
+    }
+
+    // Isolate-local IP Rate Limiter
+    // NOTE: This is a best-effort Worker-level protection, not a global WAF.
+    // A globally consistent rate limiter requires Cloudflare WAF Rate Limiting rules.
+    const ip = request.headers.get('CF-Connecting-IP');
+    if (!checkRateLimit(ip)) {
+      return new Response('Too Many Requests', { status: 429, headers: corsHeaders });
     }
 
     const url = new URL(request.url);

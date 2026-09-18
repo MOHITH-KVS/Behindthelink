@@ -35,6 +35,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep message channel open for async response
   }
 
+  if (message.type === 'CHECK_REPUTATION') {
+    const { url, requestId, originalUrl, contextObj, networkResponse } = message;
+    checkReputationAndAnalyze(url, requestId, originalUrl, contextObj, networkResponse).then(sendResponse);
+    return true;
+  }
+
   if (message.type === 'CANCEL_RESOLUTION') {
     const { requestId } = message;
     if (activeRequests.has(requestId)) {
@@ -170,13 +176,8 @@ async function resolveDestination(originalUrlString, requestId, contextObj) {
     }
   }
 
-  let reputationSignals = { status: 'REPUTATION_NOT_ENABLED' };
+  let reputationSignals = { status: 'REPUTATION_PENDING' };
   
-  if (BTL.reputationEngine) {
-    const repTarget = networkEvidence.status === 'HTTP_REDIRECT_OBSERVED' ? networkEvidence.redirectTarget : null;
-    reputationSignals = await BTL.reputationEngine.checkReputation(originalUrlString, repTarget);
-  }
-
   const safetyEvidence = BTL.safetyAnalyzer ? BTL.safetyAnalyzer.computeSafetyEvidence(
     originalUrlString,
     localSignals,
@@ -195,6 +196,45 @@ async function resolveDestination(originalUrlString, requestId, contextObj) {
     riskSignals: riskSignals,
     networkEvidence: networkEvidence,
     browserObservation: browserObservation,
+    safetyEvidence: safetyEvidence
+  };
+}
+
+async function checkReputationAndAnalyze(targetUrl, requestId, originalUrlString, contextObj, networkResponse) {
+  const BTL = (typeof self !== 'undefined' ? self : window).BehindTheLink;
+  let reputationSignals = { status: 'REPUTATION_NOT_ENABLED' };
+  
+  if (BTL.reputationEngine) {
+    // Only check the explicitly passed targetUrl
+    reputationSignals = await BTL.reputationEngine.checkReputation(targetUrl, null);
+  }
+
+  const { localSignals, riskSignals, networkEvidence, browserObservation } = networkResponse;
+  
+  let targetRiskSignals = null;
+  let targetLocalSignals = null;
+  if (networkEvidence.status === 'HTTP_REDIRECT_OBSERVED' && networkEvidence.redirectTarget) {
+    const targetAnalysis = BTL.urlAnalyzer ? BTL.urlAnalyzer.analyzeUrl(networkEvidence.redirectTarget) : null;
+    if (targetAnalysis) {
+      targetRiskSignals = targetAnalysis.riskSignals;
+      targetLocalSignals = targetAnalysis.localSignals;
+    }
+  }
+
+  const safetyEvidence = BTL.safetyAnalyzer ? BTL.safetyAnalyzer.computeSafetyEvidence(
+    originalUrlString,
+    localSignals,
+    riskSignals,
+    targetRiskSignals,
+    targetLocalSignals,
+    networkEvidence,
+    browserObservation,
+    reputationSignals,
+    contextObj
+  ) : null;
+
+  return {
+    reputationSignals: reputationSignals,
     safetyEvidence: safetyEvidence
   };
 }

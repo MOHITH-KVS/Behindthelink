@@ -54,9 +54,30 @@
     }
   }
 
+  var lastPayload = null;
+
   function updateNetworkResult(payload) {
     if (!cardElement || !shouldBeVisible || !currentLinkElement) return;
+    lastPayload = payload;
     render(payload, false);
+    positionCard(currentLinkElement);
+  }
+
+  function setReputationLoading() {
+    if (!lastPayload || !cardElement || !shouldBeVisible) return;
+    if (lastPayload.safetyEvidence) {
+      lastPayload.safetyEvidence.reputationStatus = 'REPUTATION_PENDING';
+    }
+    render(lastPayload, false);
+    positionCard(currentLinkElement);
+  }
+
+  function updateReputationResult(repResponse) {
+    if (!lastPayload || !cardElement || !shouldBeVisible) return;
+    if (repResponse && repResponse.safetyEvidence) {
+      lastPayload.safetyEvidence = repResponse.safetyEvidence;
+    }
+    render(lastPayload, false);
     positionCard(currentLinkElement);
   }
 
@@ -203,6 +224,10 @@
         case 'NO_KNOWN_THREAT':
           repIcon.textContent = '✓'; repIcon.style.color = '#10b981';
           repText.textContent = 'No known threat reported'; repText.style.color = '#6b7280';
+          break;
+        case 'REPUTATION_PENDING':
+          repIcon.textContent = '⟳'; repIcon.style.color = '#6b7280';
+          repText.textContent = 'Checking reputation…'; repText.style.color = '#6b7280';
           break;
         case 'REPUTATION_UNAVAILABLE':
         case 'NO_REPUTATION_VERDICT':
@@ -487,6 +512,8 @@
     show: show, 
     hide: hide, 
     updateNetworkResult: updateNetworkResult,
+    setReputationLoading: setReputationLoading,
+    updateReputationResult: updateReputationResult,
     getHost: function() { return hostElement; }
   };
 })();

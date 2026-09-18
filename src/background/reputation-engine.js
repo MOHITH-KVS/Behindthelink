@@ -165,13 +165,13 @@
     return true; 
   }
 
-  async function checkReputation(originalUrl, redirectTarget) {
+  async function checkReputation(targetUrl, redirectTarget) {
     const enabled = await isOptedIn();
     if (!enabled) {
       return { status: 'REPUTATION_NOT_ENABLED' };
     }
 
-    const urlsToCheck = [originalUrl];
+    const urlsToCheck = [targetUrl];
     if (redirectTarget) {
       urlsToCheck.push(redirectTarget);
     }

@@ -113,6 +113,36 @@ describe('BehindTheLink Reputation Proxy Worker', () => {
     expect(res.status).toBe(400);
   });
 
+  it('enforces IP rate limits (isolate-local)', async () => {
+    mockKV.get.mockResolvedValue(null);
+    mockCache.match.mockResolvedValue(null);
+    global.fetch.mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ negativeExpireTime: new Date(Date.now() + 120000).toISOString() })
+    });
+
+    const ip = '192.168.1.1';
+    let res;
+    // The limit is 100
+    for (let i = 0; i < 100; i++) {
+      const req = createRequest('POST', 'https://reputation.behindthelink.net/v1/hashes.search', validOrigin, { prefixes: ["c3VyZQ=="] });
+      req.headers.set('CF-Connecting-IP', ip);
+      res = await worker.fetch(req, env, ctx);
+      expect(res.status).toBe(200);
+    }
+
+    // 101st should be rejected
+    const reqLimit = createRequest('POST', 'https://reputation.behindthelink.net/v1/hashes.search', validOrigin, { prefixes: ["c3VyZQ=="] });
+    reqLimit.headers.set('CF-Connecting-IP', ip);
+    const resLimit = await worker.fetch(reqLimit, env, ctx);
+    expect(resLimit.status).toBe(429);
+    
+    // Different IP should still work
+    const reqDiff = createRequest('POST', 'https://reputation.behindthelink.net/v1/hashes.search', validOrigin, { prefixes: ["c3VyZQ=="] });
+    reqDiff.headers.set('CF-Connecting-IP', '10.0.0.1');
+    const resDiff = await worker.fetch(reqDiff, env, ctx);
+    expect(resDiff.status).toBe(200);
+  });
+
   it('deduplicates prefixes', async () => {
     const req = createRequest('POST', 'https://reputation.behindthelink.net/v1/hashes.search', validOrigin, { prefixes: ["c3VyZQ==", "c3VyZQ=="] });
     mockKV.get.mockResolvedValue(null);

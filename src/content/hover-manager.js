@@ -163,6 +163,31 @@
         if (activeReqId === currentRequestId && !isResolved && response) {
           isResolved = true;
           BTL.previewUI.updateNetworkResult(response, analysisResult);
+
+          // PHASE 4B.2: Reputation Delay
+          // Schedule reputation check only if the user remains interested
+          var REPUTATION_DELAY_MS = 600;
+          setTimeout(function() {
+            if (activeReqId === currentRequestId) {
+              BTL.previewUI.setReputationLoading();
+              var targetUrl = (response.networkEvidence && response.networkEvidence.status === 'HTTP_REDIRECT_OBSERVED' && response.networkEvidence.redirectTarget) 
+                ? response.networkEvidence.redirectTarget 
+                : url;
+              
+              safeSendMessage({
+                type: 'CHECK_REPUTATION',
+                url: targetUrl,
+                requestId: activeReqId,
+                originalUrl: url,
+                contextObj: contextObj,
+                networkResponse: response
+              }, function(repResponse) {
+                if (activeReqId === currentRequestId && repResponse) {
+                  BTL.previewUI.updateReputationResult(repResponse, analysisResult);
+                }
+              });
+            }
+          }, REPUTATION_DELAY_MS);
         }
       });
       
