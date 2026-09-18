@@ -32,8 +32,8 @@ function runTests() {
   const t2 = aggregator.aggregate([{ id: 'ACCOUNT_ACTION', tier: 'C', label: 'Account action' }], 'INFORMATIONAL');
   assert.strictEqual(t2.displaySignals.length, 1);
   assert.strictEqual(t2.displaySignals[0].id, 'ACCOUNT_ACTION');
-  assert.strictEqual(t2.whyText, "This link appears to involve an account action.");
-  assert.strictEqual(t2.actionText, "Check the destination domain before signing in.");
+  assert.strictEqual(t2.whyText, 'This link leads to an account or sign-in action.');
+  assert.strictEqual(t2.actionText, 'Check the destination domain before signing in.');
 
   // Test 3: Two independent contextual dimensions -> UNUSUAL_CHARACTERISTICS
   const sigs3 = [
@@ -49,8 +49,8 @@ function runTests() {
   const sigs4 = [{ id: 'CLAIM_DESTINATION_MISMATCH', tier: 'C', label: 'Mismatch' }];
   const t4 = aggregator.aggregate(sigs4, 'UNUSUAL_CHARACTERISTICS');
   assert.strictEqual(t4.displaySignals.length, 1);
-  assert.strictEqual(t4.whyText, "The link's description doesn't match its verified destination.");
-  assert.strictEqual(t4.actionText, "Check the destination domain before continuing.");
+  assert.strictEqual(t4.whyText, "The link mentions a brand, but the destination is not an official domain.");
+  assert.strictEqual(t4.actionText, "Check the destination domain before entering sensitive information.");
 
   // Test 5: Strong-warning input
   const sigs5 = [{ id: 'REPUTATION_CONFIRMED_THREAT', tier: 'D', label: 'Threat' }];

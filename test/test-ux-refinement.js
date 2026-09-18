@@ -119,7 +119,7 @@ runTest("UX-001: Normal link hierarchy and quiet state", () => {
   assert.ok(evidenceEl.className.includes('btl-evidence-neutral'));
 
   const status = findElementsByClass(card, 'btl-safety-status')[0].textContent;
-  assert.ok(status.includes('Nothing unusual found'));
+  assert.ok(status.includes('No obvious warning signs'), 'Should display quiet state fallback text');
   
   const typeText = findElementsByClass(card, 'btl-text-main')[0].textContent;
   assert.strictEqual(typeText, 'Direct link');
@@ -258,6 +258,34 @@ runTest("UX-010: Phase 4A Known Threat suppresses redundant local status", () =>
   // KNOWN_THREAT overrides the local status in the UI completely to avoid clutter
   assert.strictEqual(statuses.length, 1);
   assert.ok(statuses[0].includes('Known threat reported'));
+});
+
+runTest("UX-011: Direct URL + brand mismatch is NOT a redirecting link", () => {
+  const card = getCard({
+    originalUrl: 'https://example.com',
+    safetyEvidence: { 
+      status: 'UNUSUAL_CHARACTERISTICS',
+      localStatus: 'UNUSUAL_CHARACTERISTICS',
+      signals: [{ id: 'CLAIM_DESTINATION_MISMATCH' }]
+    },
+    networkEvidence: { status: 'NO_REDIRECT_OBSERVED' }
+  });
+  const typeText = findElementsByClass(card, 'btl-text-main')[0].textContent;
+  assert.strictEqual(typeText, 'Direct link');
+});
+
+runTest("UX-012: Actual HTTP redirect produces Redirecting link", () => {
+  const card = getCard({
+    originalUrl: 'https://example.com',
+    safetyEvidence: { 
+      status: 'NO_SIGNALS_DETECTED',
+      localStatus: 'NO_SIGNALS_DETECTED',
+      signals: []
+    },
+    networkEvidence: { status: 'HTTP_REDIRECT_OBSERVED', redirectTarget: 'https://target.com' }
+  });
+  const typeText = findElementsByClass(card, 'btl-text-main')[0].textContent;
+  assert.strictEqual(typeText, 'Redirecting link');
 });
 
 console.log(`\nResults: ${passed}/${total} passed`);

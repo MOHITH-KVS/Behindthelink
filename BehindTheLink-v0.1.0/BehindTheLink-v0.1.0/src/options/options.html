@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>BehindTheLink Settings</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f8f9fa;
+      color: #202124;
+      max-width: 600px;
+      margin: 40px auto;
+      padding: 0 20px;
+    }
+    .card {
+      background: #ffffff;
+      border: 1px solid #dadce0;
+      border-radius: 8px;
+      padding: 24px;
+      box-shadow: 0 1px 2px rgba(60,64,67,0.1);
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 500;
+      margin-top: 0;
+      margin-bottom: 24px;
+    }
+    .setting-row {
+      display: flex;
+      align-items: flex-start;
+      margin-bottom: 16px;
+    }
+    .setting-label {
+      flex-grow: 1;
+    }
+    .setting-title {
+      font-weight: 500;
+      font-size: 16px;
+      margin-bottom: 4px;
+    }
+    .setting-desc {
+      font-size: 13px;
+      color: #5f6368;
+      line-height: 1.5;
+    }
+    .toggle {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+      margin-left: 20px;
+      flex-shrink: 0;
+    }
+    .toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .2s;
+      border-radius: 24px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .2s;
+      border-radius: 50%;
+    }
+    input:checked + .slider {
+      background-color: #1a73e8;
+    }
+    input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+    .privacy-notice {
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid #eee;
+      font-size: 13px;
+      color: #3c4043;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>BehindTheLink Settings</h1>
+    
+    <div class="setting-row">
+      <div class="setting-label">
+        <div class="setting-title">Local Analysis</div>
+        <div class="setting-desc">BehindTheLink exclusively performs local analysis of URL structures and tracking signatures. Your data never leaves your device.</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
