@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Menu, X, Shield } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import { DOWNLOAD_URL, GITHUB_URL } from '../config';
 import './Navbar.css';
 
@@ -12,8 +12,7 @@ export default function Navbar() {
     <header className="navbar-container">
       <div className="container navbar">
         <div className="nav-logo">
-          <Shield className="logo-icon" size={28} />
-          <span className="logo-text">BehindTheLink</span>
+          <img src="/branding/behindthelink-logo.png" alt="BehindTheLink" className="logo-image" />
         </div>
         
         <nav className={`nav-links ${isOpen ? 'open' : ''}`}>
