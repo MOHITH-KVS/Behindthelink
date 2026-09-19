@@ -1,0 +1,108 @@
+.problem-visual {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 600px;
+  margin: 0 auto 48px;
+  background-color: white;
+  border-radius: var(--radius-lg);
+  padding: 48px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--color-border);
+}
+
+.problem-side {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.problem-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  letter-spacing: 0.1em;
+  margin-bottom: 16px;
+}
+
+.problem-card {
+  width: 100%;
+  max-width: 350px;
+  background-color: var(--color-bg-light);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  text-align: center;
+}
+
+.problem-claim {
+  font-size: 1.125rem;
+  font-weight: 500;
+  margin-bottom: 12px;
+  color: var(--color-accent);
+}
+
+.problem-url {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  background-color: white;
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.problem-arrow {
+  color: var(--color-border-dark);
+  opacity: 0.4;
+  margin: 32px 0;
+}
+
+.problem-flow {
+  width: 100%;
+  max-width: 350px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.flow-step {
+  width: 100%;
+  background-color: var(--color-bg-light);
+  border: 1px solid var(--color-border);
+  padding: 12px 24px;
+  border-radius: var(--radius-md);
+  text-align: center;
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.flow-step.warning {
+  background-color: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #b45309;
+}
+
+.flow-arrow {
+  color: var(--color-border-dark);
+  opacity: 0.3;
+  margin: 12px 0;
+}
+
+.problem-conclusion {
+  text-align: center;
+  font-size: 1.25rem;
+  color: var(--color-text-dark);
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+@media (max-width: 640px) {
+  .problem-visual {
+    padding: 32px 20px;
+  }
+}

@@ -1,0 +1,40 @@
+.os-container {
+  max-width: 800px;
+  margin: 0 auto;
+  text-align: center;
+  background-color: white;
+  padding: 64px 40px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.os-title {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 16px;
+  letter-spacing: -0.02em;
+}
+
+.os-desc {
+  font-size: 1.125rem;
+  color: var(--color-text-muted);
+  margin-bottom: 32px;
+}
+
+.os-actions {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.os-btn {
+  background-color: white;
+}
+
+@media (max-width: 480px) {
+  .os-actions {
+    flex-direction: column;
+  }
+}
