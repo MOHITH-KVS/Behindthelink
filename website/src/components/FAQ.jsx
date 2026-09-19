@@ -44,12 +44,16 @@ export default function FAQ() {
             <div 
               key={idx} 
               className={`faq-item ${openIndex === idx ? 'active' : ''}`}
-              onClick={() => setOpenIndex(openIndex === idx ? -1 : idx)}
             >
-              <div className="faq-question">
+              <button 
+                className="faq-question"
+                onClick={() => setOpenIndex(openIndex === idx ? -1 : idx)}
+                aria-expanded={openIndex === idx}
+                style={{ width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              >
                 <span>{faq.q}</span>
                 {openIndex === idx ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-              </div>
+              </button>
               <div className="faq-answer">
                 <div className="faq-answer-content">{faq.a}</div>
               </div>

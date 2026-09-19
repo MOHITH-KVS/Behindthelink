@@ -38,6 +38,7 @@ html {
   background-color: var(--color-bg-light);
   line-height: 1.5;
   scroll-behavior: smooth;
+  scroll-padding-top: var(--nav-height); /* Fixes sticky navbar anchor offset */
 }
 
 body {
@@ -47,6 +48,12 @@ body {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+/* Accessibility focus styles */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 button {

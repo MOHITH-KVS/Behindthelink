@@ -13,13 +13,13 @@ export default function HowItWorks() {
     {
       num: "02",
       title: "Inspect",
-      desc: "BehindTheLink analyzes the link and available destination information.",
+      desc: "BehindTheLink checks the link and available destination information.",
       icon: <Search size={24} />
     },
     {
       num: "03",
       title: "Understand",
-      desc: "See the destination and relevant signals in plain language.",
+      desc: "See what we found in plain language.",
       icon: <BookOpen size={24} />
     },
     {

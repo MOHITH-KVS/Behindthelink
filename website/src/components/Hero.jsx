@@ -56,9 +56,12 @@ export default function Hero() {
             </div>
             <div className="browser-body">
               <p className="mockup-text">You have 1 new secure message.</p>
-              <a href="#" className="mockup-link">View message now &rarr;</a>
-              
-              <div className="popup-mockup">
+              <span className="mockup-link">View message now &rarr;</span>
+            </div>
+          </div>
+          
+          <div className="popup-mockup-wrapper">
+             <div className="popup-mockup">
                 <div className="popup-header">
                   <span className="popup-title">BehindTheLink</span>
                 </div>
@@ -76,7 +79,6 @@ export default function Hero() {
                   </div>
                 </div>
               </div>
-            </div>
           </div>
         </div>
       </div>

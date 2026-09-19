@@ -1,12 +1,12 @@
 .hero-section {
-  padding: 120px 0 100px;
+  padding: 80px 0;
   overflow: hidden;
 }
 
 .hero-container {
   display: grid;
   grid-template-columns: 1.1fr 0.9fr;
-  gap: 64px;
+  gap: 48px;
   align-items: center;
 }
 
@@ -71,16 +71,22 @@
 
 /* Browser Mockup */
 .hero-visual {
+  display: flex;
+  flex-direction: column;
   position: relative;
+  align-items: center;
+  width: 100%;
 }
 
 .browser-mockup {
   background-color: #ffffff;
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  width: 100%;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: var(--color-text-dark);
+  z-index: 1;
 }
 
 .browser-header {
@@ -119,7 +125,7 @@
 }
 
 .browser-body {
-  padding: 60px 40px 120px;
+  padding: 40px 32px;
   position: relative;
 }
 
@@ -135,24 +141,24 @@
   font-weight: 500;
   font-size: 1.125rem;
   border-bottom: 1px solid transparent;
-}
-
-.mockup-link:hover {
-  border-bottom-color: var(--color-accent);
+  cursor: pointer;
 }
 
 /* Popup Mockup */
+.popup-mockup-wrapper {
+  margin-top: -24px; /* Slight overlap on desktop */
+  align-self: flex-end;
+  z-index: 10;
+  width: 80%;
+  animation: float 4s ease-in-out infinite;
+}
+
 .popup-mockup {
-  position: absolute;
-  top: 90px;
-  left: 200px;
-  width: 280px;
   background-color: #ffffff;
   border-radius: 12px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0,0,0,0.05);
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0,0,0,0.05);
   overflow: hidden;
-  z-index: 10;
-  animation: float 4s ease-in-out infinite;
+  width: 100%;
 }
 
 @keyframes float {
@@ -201,6 +207,7 @@
   font-weight: 600;
   font-size: 0.95rem;
   word-break: break-all;
+  color: var(--color-text-dark);
 }
 
 .popup-list {
@@ -236,9 +243,10 @@
     justify-content: center;
   }
   
-  .popup-mockup {
-    left: 50%;
-    transform: translateX(-30%);
+  .popup-mockup-wrapper {
+    align-self: center;
+    width: 90%;
+    margin-top: -16px;
     animation: none;
   }
 }
@@ -258,10 +266,8 @@
     gap: 16px;
   }
   
-  .popup-mockup {
-    left: 20px;
-    right: 20px;
-    width: auto;
-    transform: none;
+  .popup-mockup-wrapper {
+    width: 100%;
+    margin-top: 16px; /* Stack instead of overlap */
   }
 }

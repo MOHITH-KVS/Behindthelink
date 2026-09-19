@@ -3,11 +3,51 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- Security: Basic CSP to prevent obvious XSS while allowing Vite to function -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com;">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    
+    <!-- SEO -->
     <title>BehindTheLink — See What's Behind the Link Before You Click</title>
-    <meta name="description" content="BehindTheLink is a local-first Chrome extension that helps you understand where links lead and highlights characteristics worth paying attention to before you click." />
-    <meta property="og:title" content="BehindTheLink — See What's Behind the Link Before You Click" />
-    <meta property="og:description" content="BehindTheLink is a local-first Chrome extension that helps you understand where links lead and highlights characteristics worth paying attention to before you click." />
+    <meta name="description" content="BehindTheLink is a local-first Chrome extension that helps you understand where links lead, inspect redirects, and identify link and context characteristics worth paying attention to before you click." />
+    
+    <!-- Open Graph / Social -->
     <meta property="og:type" content="website" />
+    <meta property="og:title" content="BehindTheLink — See What's Behind the Link Before You Click" />
+    <meta property="og:description" content="BehindTheLink is a local-first Chrome extension that helps you understand where links lead, inspect redirects, and identify link and context characteristics worth paying attention to before you click." />
+    <!-- Placeholder for canonical and og:image since domain is not known yet -->
+    <!-- <link rel="canonical" href="https://example.com/" /> -->
+    <!-- <meta property="og:image" content="https://example.com/og-image.png" /> -->
+    <!-- <meta property="og:url" content="https://example.com/" /> -->
+    
+    <!-- Twitter/X Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="BehindTheLink — See What's Behind the Link Before You Click">
+    <meta name="twitter:description" content="BehindTheLink is a local-first Chrome extension that helps you understand where links lead, inspect redirects, and identify link and context characteristics worth paying attention to before you click.">
+    <!-- <meta name="twitter:image" content="https://example.com/twitter-image.png"> -->
+    
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Fallback icon could be added here -->
+
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "BehindTheLink",
+        "operatingSystem": "Chrome / Chromium-based browsers",
+        "applicationCategory": "BrowserApplication",
+        "description": "BehindTheLink is a local-first Chrome extension that helps you understand where links lead, inspect redirects, and identify link and context characteristics worth paying attention to before you click.",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      }
+    </script>
+    
     <style>
       /* Prevent initial flash of unstyled content */
       body {
