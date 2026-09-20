@@ -20,15 +20,24 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  font-weight: 700;
-  font-size: 1.25rem;
-  color: var(--color-bg-dark);
+  text-decoration: none;
 }
 
-.logo-image {
-  height: 32px;
-  width: auto;
+.brand-symbol {
+  height: 28px;
+  width: 28px;
   object-fit: contain;
+}
+
+.brand-text {
+  font-weight: 700;
+  font-size: 21px;
+  color: var(--color-bg-dark);
+  letter-spacing: -0.01em;
+}
+
+.brand-text-accent {
+  color: var(--color-accent);
 }
 
 .nav-links {
@@ -89,5 +98,16 @@
   
   .mobile-menu-btn {
     display: block;
+  }
+}
+
+@media (max-width: 640px) {
+  .brand-symbol {
+    height: 24px;
+    width: 24px;
+  }
+  
+  .brand-text {
+    font-size: 18px;
   }
 }

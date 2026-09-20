@@ -45,10 +45,28 @@
 }
 
 .footer-logo {
-  font-size: 1.25rem;
-  font-weight: 700;
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
   margin-bottom: 12px;
+}
+
+.footer-brand-symbol {
+  height: 24px;
+  width: 24px;
+  object-fit: contain;
+}
+
+.footer-brand-text {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: white;
+  letter-spacing: -0.01em;
+}
+
+.brand-text-accent {
+  color: var(--color-accent);
 }
 
 .footer-tagline {
