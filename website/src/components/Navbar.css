@@ -21,6 +21,7 @@
   align-items: center;
   gap: 12px;
   text-decoration: none;
+  margin-left: -32px; /* Move brand 32px to the left */
 }
 
 .brand-symbol {
@@ -102,6 +103,10 @@
 }
 
 @media (max-width: 640px) {
+  .nav-logo {
+    margin-left: 0;
+  }
+  
   .brand-symbol {
     height: 24px;
     width: 24px;
