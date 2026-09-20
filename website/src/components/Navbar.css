@@ -21,7 +21,6 @@
   align-items: center;
   gap: 12px;
   text-decoration: none;
-  margin-left: -32px; /* Move brand 32px to the left */
 }
 
 .brand-symbol {
@@ -114,5 +113,17 @@
   
   .brand-text {
     font-size: 18px;
+  }
+}
+
+/* 
+  Fix Navbar horizontal alignment to push brand left by ~54px
+  while keeping the right side (navigation/download) stationary.
+*/
+@media (min-width: 1024px) {
+  .navbar-container .container {
+    max-width: 1260px; /* Expands container by 30px on each side compared to the default 1200px */
+    padding-left: 0;   /* Moves brand an additional 24px left (total 54px left) */
+    padding-right: 54px; /* Counters the 30px right expansion (24px original + 30px) */
   }
 }
