@@ -63,6 +63,7 @@ export default function Hero() {
           <div className="popup-mockup-wrapper">
              <div className="popup-mockup">
                 <div className="popup-header">
+                  <img src="/branding/behindthelink-logo.png" alt="" aria-hidden="true" className="popup-logo" />
                   <span className="popup-title">BehindTheLink</span>
                 </div>
                 <div className="popup-body">

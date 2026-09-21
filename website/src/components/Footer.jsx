@@ -34,7 +34,7 @@ export default function Footer() {
           <div className="footer-top">
             <div className="footer-brand">
               <a href="/" className="footer-logo">
-                <img src="/branding/behindthelink-symbol.png" alt="" aria-hidden="true" className="footer-brand-symbol" />
+                <img src="/branding/behindthelink-logo.png" alt="" aria-hidden="true" className="footer-brand-symbol" />
                 <span className="footer-brand-text">BehindThe<span className="brand-text-accent">Link</span></span>
               </a>
               <p className="footer-tagline">See what's behind the link before you click.</p>

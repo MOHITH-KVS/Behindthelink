@@ -12,7 +12,7 @@ export default function Navbar() {
     <header className="navbar-container">
       <div className="container navbar">
         <a href="/" className="nav-logo">
-          <img src="/branding/behindthelink-symbol.png" alt="" aria-hidden="true" className="brand-symbol" />
+          <img src="/branding/behindthelink-logo.png" alt="" aria-hidden="true" className="brand-symbol" />
           <span className="brand-text">BehindThe<span className="brand-text-accent">Link</span></span>
         </a>
         

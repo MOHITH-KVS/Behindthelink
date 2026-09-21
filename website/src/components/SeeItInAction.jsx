@@ -25,6 +25,7 @@ export default function SeeItInAction() {
           <div className="action-popup">
             <div className="btl-popup">
               <div className="btl-popup-header">
+                <img src="/branding/behindthelink-logo.png" alt="" aria-hidden="true" className="popup-logo" />
                 <span>BehindTheLink</span>
               </div>
               <div className="btl-popup-content">

@@ -95,8 +95,15 @@
   font-size: 0.9rem;
   display: flex;
   align-items: center;
+  gap: 8px;
   position: relative;
   z-index: 2;
+}
+
+.popup-logo {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
 }
 
 .btl-popup-content {
