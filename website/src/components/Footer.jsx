@@ -10,15 +10,14 @@ export default function Footer() {
       <section className="section section-dark text-center final-cta">
         <div className="container">
           <h2 className="cta-title">
-            Before you click.<br />
-            Know what's behind it.
+            Ready to see what's behind the link?
           </h2>
-          <p className="cta-subtitle">Free. Local-first. Open source.</p>
+          <p className="cta-subtitle">Install BehindTheLink for free and get more context before you click unfamiliar links.</p>
           
           <div className="cta-actions">
             <a href={DOWNLOAD_URL} className="btn btn-primary btn-large">
               <Download size={20} />
-              Download for Chrome
+              Install BehindTheLink
             </a>
             <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="btn btn-outline-light btn-large">
               <Code2 size={20} />

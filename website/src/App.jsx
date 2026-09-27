@@ -11,6 +11,7 @@ import Privacy from './components/Privacy';
 import Limitations from './components/Limitations';
 import FAQ from './components/FAQ';
 import OpenSource from './components/OpenSource';
+import SpreadTheWord from './components/SpreadTheWord';
 import Footer from './components/Footer';
 
 function App() {
@@ -29,6 +30,7 @@ function App() {
         <Limitations />
         <FAQ />
         <OpenSource />
+        <SpreadTheWord />
       </main>
       <Footer />
     </div>
