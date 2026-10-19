@@ -441,14 +441,23 @@
     }
 
     // --- STEP 4.2: Evaluate Claim ↔ Destination Mismatch ---
-    var verifiedDestination = null;
-    var mismatchSource = null;
-    if (networkEvidence && networkEvidence.status === 'HTTP_REDIRECT_OBSERVED' && networkEvidence.redirectTarget) {
-      verifiedDestination = networkEvidence.redirectTarget;
-      mismatchSource = 'network';
-    } else if (browserObservation && browserObservation.status === 'STRONG_CORRELATION' && browserObservation.observedLatestUrl) {
-      verifiedDestination = browserObservation.observedLatestUrl;
-      mismatchSource = 'browser_observation';
+    var destEvidence = (BTL.claimDestinationAnalyzer && typeof BTL.claimDestinationAnalyzer.getVerifiedDestination === 'function')
+      ? BTL.claimDestinationAnalyzer.getVerifiedDestination(networkEvidence, browserObservation, originalUrl)
+      : null;
+    var verifiedDestination = destEvidence ? destEvidence.url : null;
+    var mismatchSource = destEvidence ? destEvidence.source : null;
+
+    if (!destEvidence) {
+      if (networkEvidence && networkEvidence.status === 'HTTP_REDIRECT_OBSERVED' && networkEvidence.redirectTarget) {
+        verifiedDestination = networkEvidence.redirectTarget;
+        mismatchSource = 'network';
+      } else if (networkEvidence && networkEvidence.status === 'NO_REDIRECT_OBSERVED') {
+        verifiedDestination = originalUrl;
+        mismatchSource = 'network';
+      } else if (browserObservation && browserObservation.status === 'STRONG_CORRELATION' && browserObservation.observedLatestUrl) {
+        verifiedDestination = browserObservation.observedLatestUrl;
+        mismatchSource = 'browser_observation';
+      }
     }
 
     if (verifiedDestination && contextObj && BTL.claimDestinationAnalyzer) {
@@ -458,7 +467,7 @@
           id: 'CLAIM_DESTINATION_MISMATCH',
           tier: 'C',
           dimension: 'claim_destination',
-          urlContext: 'network_target_url',
+          urlContext: (verifiedDestination === originalUrl) ? 'original_url' : 'network_target_url',
           source: mismatchSource,
           epistemic: 'VERIFIED',
           label: "Link and destination don't match",

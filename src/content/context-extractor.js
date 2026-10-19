@@ -26,24 +26,6 @@
     { cat: 'GENERAL', regex: /\b(click here|read more|continue|learn more)\b/i }
   ];
 
-  var BRAND_REGISTRY = [
-    { id: 'GOOGLE', aliases: ['google'] },
-    { id: 'MICROSOFT', aliases: ['microsoft', 'windows', 'office365', 'outlook', 'onedrive'] },
-    { id: 'APPLE', aliases: ['apple', 'icloud'] },
-    { id: 'AMAZON', aliases: ['amazon', 'aws'] },
-    { id: 'META', aliases: ['meta'] },
-    { id: 'PAYPAL', aliases: ['paypal'] },
-    { id: 'NETFLIX', aliases: ['netflix'] },
-    { id: 'LINKEDIN', aliases: ['linkedin'] },
-    { id: 'WHATSAPP', aliases: ['whatsapp'] },
-    { id: 'INSTAGRAM', aliases: ['instagram'] },
-    { id: 'FACEBOOK', aliases: ['facebook'] },
-    { id: 'TELEGRAM', aliases: ['telegram'] },
-    { id: 'YOUTUBE', aliases: ['youtube'] },
-    { id: 'GITHUB', aliases: ['github'] },
-    { id: 'OPENAI', aliases: ['openai', 'chatgpt'] }
-  ];
-
   function normalize(str) {
     if (!str) return '';
     return str.replace(/\s+/g, ' ').trim();
@@ -79,13 +61,59 @@
     return 'UNKNOWN';
   }
 
-  function extractBrand(contextStr) {
-    var lower = contextStr.toLowerCase();
-    for (var i = 0; i < BRAND_REGISTRY.length; i++) {
-      for (var j = 0; j < BRAND_REGISTRY[i].aliases.length; j++) {
-        var regex = new RegExp('\\b' + BRAND_REGISTRY[i].aliases[j] + '\\b');
-        if (regex.test(lower)) {
-          return BRAND_REGISTRY[i].id;
+  function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function extractBrand(contextStr, category) {
+    if (!contextStr) return null;
+
+    // Primary: Consume unified Brand Registry
+    if (BTL.brandRegistry && typeof BTL.brandRegistry.getAllAliases === 'function') {
+      var allAliases = BTL.brandRegistry.getAllAliases();
+      var lower = contextStr.toLowerCase();
+
+      for (var i = 0; i < allAliases.length; i++) {
+        var item = allAliases[i];
+        var textToSearch = item.matchCase ? contextStr : lower;
+        var pattern = item.matchCase ? escapeRegex(item.text) : escapeRegex(item.text.toLowerCase());
+        var regex = new RegExp('\\b' + pattern + '\\b');
+
+        if (regex.test(textToSearch)) {
+          return item.brandId;
+        }
+      }
+      return null;
+    }
+
+    // Defensive fallback if Brand Registry is not loaded in sandbox
+    var lowerFallback = contextStr.toLowerCase();
+    var FALLBACK_REGISTRY = [
+      { id: 'GOOGLE', aliases: ['google', 'gmail'] },
+      { id: 'MICROSOFT', aliases: ['microsoft', 'windows', 'office365', 'outlook', 'onedrive'] },
+      { id: 'APPLE', aliases: ['apple', 'icloud'] },
+      { id: 'AMAZON', aliases: ['amazon', 'aws'] },
+      { id: 'META', aliases: ['meta'] },
+      { id: 'PAYPAL', aliases: ['paypal'] },
+      { id: 'NETFLIX', aliases: ['netflix'] },
+      { id: 'LINKEDIN', aliases: ['linkedin'] },
+      { id: 'WHATSAPP', aliases: ['whatsapp'] },
+      { id: 'INSTAGRAM', aliases: ['instagram'] },
+      { id: 'FACEBOOK', aliases: ['facebook'] },
+      { id: 'TELEGRAM', aliases: ['telegram'] },
+      { id: 'YOUTUBE', aliases: ['youtube'] },
+      { id: 'GITHUB', aliases: ['github'] },
+      { id: 'OPENAI', aliases: ['openai', 'chatgpt'] },
+      { id: 'SBI', aliases: ['state bank of india', 'sbi', 'onlinesbi'] },
+      { id: 'HDFC', aliases: ['hdfc bank', 'hdfc', 'hdfcbank'] },
+      { id: 'AXIS', aliases: ['axis bank', 'axis', 'axisbank'] }
+    ];
+
+    for (var f = 0; f < FALLBACK_REGISTRY.length; f++) {
+      for (var a = 0; a < FALLBACK_REGISTRY[f].aliases.length; a++) {
+        var fbRegex = new RegExp('\\b' + escapeRegex(FALLBACK_REGISTRY[f].aliases[a]) + '\\b');
+        if (fbRegex.test(lowerFallback)) {
+          return FALLBACK_REGISTRY[f].id;
         }
       }
     }
@@ -102,7 +130,7 @@
 
     var fullContext = [visibleText, ariaLabel, title, nearbyText].join(' ');
     var category = categorize(fullContext);
-    var brand = extractBrand(fullContext);
+    var brand = extractBrand(fullContext, category);
 
     return {
       visibleText: visibleText,

@@ -9,6 +9,7 @@
       "matches": ["<all_urls>"],
       "js": [
         "src/shared/constants.js",
+        "src/shared/brand-registry.js",
         "src/content/link-eligibility.js",
         "src/content/tracking-registry.js",
         "src/content/shortener-registry.js",
