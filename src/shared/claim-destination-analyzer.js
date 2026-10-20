@@ -24,23 +24,45 @@
   function normalizeHostname(urlOrHost) {
     if (!urlOrHost || typeof urlOrHost !== 'string') return '';
     var trimmed = urlOrHost.trim();
+    if (!trimmed) return '';
     var host = '';
 
-    try {
-      var u = new URL(trimmed);
-      host = u.hostname;
-    } catch (e) {
-      // If not a full URL with protocol, attempt parsing by adding dummy protocol
+    // 1. If it has a scheme separator '://'
+    if (trimmed.indexOf('://') !== -1) {
       try {
-        var u2 = new URL('https://' + trimmed);
-        host = u2.hostname;
-      } catch (e2) {
-        // Strip path, query, hash, port manually
-        host = trimmed.split('/')[0].split('?')[0].split('#')[0].split(':')[0];
+        var u = new URL(trimmed);
+        if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+          return '';
+        }
+        host = u.hostname;
+      } catch (e) {
+        return '';
+      }
+    }
+    // 2. If it starts with a non-HTTP(S) scheme without slashes (e.g. javascript:, data:, mailto:, tel:, blob:)
+    else if (/^(?:javascript|data|mailto|tel|blob|about|chrome|chrome-extension|file|ftp)\s*:/i.test(trimmed)) {
+      return '';
+    }
+    // 3. Protocol-relative URL (e.g. //microsoft.com)
+    else if (trimmed.slice(0, 2) === '//') {
+      try {
+        var uRel = new URL('https:' + trimmed);
+        host = uRel.hostname;
+      } catch (e) {
+        return '';
+      }
+    }
+    // 4. Bare hostname or hostname:port
+    else {
+      try {
+        var uBare = new URL('https://' + trimmed);
+        host = uBare.hostname;
+      } catch (e) {
+        return '';
       }
     }
 
-    return host.toLowerCase().replace(/\.+$/, '');
+    return (host || '').toLowerCase().replace(/\.+$/, '');
   }
 
   /**
@@ -160,7 +182,14 @@
    */
   function evaluateMismatch(contextObj, verifiedDestinationUrl) {
     if (!contextObj || !contextObj.possibleClaimedBrand) return null;
-    if (!verifiedDestinationUrl) return null; // Inconclusive / unverified destination produces no mismatch
+    if (!verifiedDestinationUrl || typeof verifiedDestinationUrl !== 'string' || !verifiedDestinationUrl.trim()) {
+      return null; // Inconclusive / unverified destination produces no mismatch
+    }
+
+    var destHost = normalizeHostname(verifiedDestinationUrl);
+    if (!destHost) {
+      return null; // Unparseable or non-HTTP(S) destination cannot be verified; produce no mismatch
+    }
 
     var strength = getClaimStrength(contextObj);
     if (strength !== 'STRONG') return null; // Only mismatch on STRONG claims to prevent false positives

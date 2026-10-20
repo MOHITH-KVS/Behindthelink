@@ -23,6 +23,29 @@ function loadModule() {
   return sandbox.self.BehindTheLink.claimDestinationAnalyzer;
 }
 
+function loadSafetyAnalyzer() {
+  const constantsPath = path.join(__dirname, '..', 'src', 'shared', 'constants.js');
+  const registryPath = path.join(__dirname, '..', 'src', 'shared', 'brand-registry.js');
+  const claimPath = path.join(__dirname, '..', 'src', 'shared', 'claim-destination-analyzer.js');
+  const aggregatorPath = path.join(__dirname, '..', 'src', 'shared', 'assessment-aggregator.js');
+  const safetyPath = path.join(__dirname, '..', 'src', 'shared', 'safety-analyzer.js');
+
+  const sandbox = {
+    self: {},
+    window: {},
+    URL: URL
+  };
+
+  vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(constantsPath, 'utf8'), sandbox);
+  vm.runInContext(fs.readFileSync(registryPath, 'utf8'), sandbox);
+  vm.runInContext(fs.readFileSync(claimPath, 'utf8'), sandbox);
+  vm.runInContext(fs.readFileSync(aggregatorPath, 'utf8'), sandbox);
+  vm.runInContext(fs.readFileSync(safetyPath, 'utf8'), sandbox);
+
+  return sandbox.self.BehindTheLink.safetyAnalyzer;
+}
+
 function runTests() {
   console.log("--- claim-destination-analyzer tests ---");
   const analyzer = loadModule();
@@ -230,6 +253,179 @@ function runTests() {
       'https://original.com'
     );
     assert.strictEqual(r4, null, 'Inconclusive network failure should return null');
+  });
+
+  // Test 17: HTTP/HTTPS vs Non-HTTP(S) Protocol Validation (normalizeHostname & isOfficialDestination)
+  countTest("Test 17: HTTP/HTTPS protocol validation and bare hostname handling", () => {
+    // Official HTTP and HTTPS
+    assert.strictEqual(analyzer.normalizeHostname('https://microsoft.com'), 'microsoft.com');
+    assert.strictEqual(analyzer.normalizeHostname('http://microsoft.com'), 'microsoft.com');
+    assert.strictEqual(analyzer.isOfficialDestination('MICROSOFT', 'https://microsoft.com'), true);
+    assert.strictEqual(analyzer.isOfficialDestination('MICROSOFT', 'http://microsoft.com'), true);
+
+    // Non-HTTP(S) schemes MUST return empty hostname and be rejected as official web destinations
+    assert.strictEqual(analyzer.normalizeHostname('ftp://microsoft.com'), '');
+    assert.strictEqual(analyzer.isOfficialDestination('MICROSOFT', 'ftp://microsoft.com'), false);
+
+    assert.strictEqual(analyzer.normalizeHostname('javascript:alert(1)'), '');
+    assert.strictEqual(analyzer.isOfficialDestination('MICROSOFT', 'javascript:alert(1)'), false);
+
+    assert.strictEqual(analyzer.normalizeHostname('data:text/html,test'), '');
+    assert.strictEqual(analyzer.isOfficialDestination('MICROSOFT', 'data:text/html,test'), false);
+
+    assert.strictEqual(analyzer.normalizeHostname('mailto:support@microsoft.com'), '');
+    assert.strictEqual(analyzer.isOfficialDestination('MICROSOFT', 'mailto:support@microsoft.com'), false);
+
+    assert.strictEqual(analyzer.normalizeHostname('tel:+1234567890'), '');
+    assert.strictEqual(analyzer.isOfficialDestination('MICROSOFT', 'tel:+1234567890'), false);
+
+    assert.strictEqual(analyzer.normalizeHostname('blob:https://example.com/id'), '');
+    assert.strictEqual(analyzer.isOfficialDestination('MICROSOFT', 'blob:https://example.com/id'), false);
+
+    assert.strictEqual(analyzer.normalizeHostname('file:///c:/path'), '');
+    assert.strictEqual(analyzer.isOfficialDestination('MICROSOFT', 'file:///c:/path'), false);
+
+    // Bare hostnames, ports, and trailing-root-dots
+    assert.strictEqual(analyzer.normalizeHostname('microsoft.com'), 'microsoft.com');
+    assert.strictEqual(analyzer.normalizeHostname('microsoft.com:8443'), 'microsoft.com');
+    assert.strictEqual(analyzer.normalizeHostname('user:pass@microsoft.com'), 'microsoft.com');
+    assert.strictEqual(analyzer.normalizeHostname('login.microsoft.com.'), 'login.microsoft.com');
+    assert.strictEqual(analyzer.isOfficialDestination('MICROSOFT', 'microsoft.com'), true);
+    assert.strictEqual(analyzer.isOfficialDestination('MICROSOFT', 'microsoft.com:8443'), true);
+
+    // Empty, whitespace, null, undefined, malformed
+    assert.strictEqual(analyzer.normalizeHostname(''), '');
+    assert.strictEqual(analyzer.normalizeHostname('   '), '');
+    assert.strictEqual(analyzer.normalizeHostname(null), '');
+    assert.strictEqual(analyzer.normalizeHostname(undefined), '');
+    assert.strictEqual(analyzer.normalizeHostname('https://'), '');
+    assert.strictEqual(analyzer.normalizeHostname('not a valid url &&&&'), '');
+  });
+
+  // Test 18: evaluateMismatch Protocol & Malformed Destination Inconclusive Guardrails
+  countTest("Test 18: evaluateMismatch protocol and malformed destination guardrails", () => {
+    // Official destinations produce no mismatch
+    assert.strictEqual(analyzer.evaluateMismatch(t1Context, 'https://microsoft.com'), null);
+    assert.strictEqual(analyzer.evaluateMismatch(t1Context, 'http://microsoft.com'), null);
+    assert.strictEqual(analyzer.evaluateMismatch(t1Context, 'https://login.microsoftonline.com'), null);
+
+    // Non-HTTP(S) schemes MUST return null (inconclusive / no false mismatch manufactured)
+    assert.strictEqual(analyzer.evaluateMismatch(t1Context, 'ftp://microsoft.com'), null);
+    assert.strictEqual(analyzer.evaluateMismatch(t1Context, 'javascript:alert(1)'), null);
+    assert.strictEqual(analyzer.evaluateMismatch(t1Context, 'data:text/html,test'), null);
+    assert.strictEqual(analyzer.evaluateMismatch(t1Context, 'mailto:support@microsoft.com'), null);
+    assert.strictEqual(analyzer.evaluateMismatch(t1Context, 'blob:https://example.com/id'), null);
+
+    // Missing, whitespace, null, undefined, malformed destinations MUST return null
+    assert.strictEqual(analyzer.evaluateMismatch(t1Context, ''), null);
+    assert.strictEqual(analyzer.evaluateMismatch(t1Context, '   '), null);
+    assert.strictEqual(analyzer.evaluateMismatch(t1Context, null), null);
+    assert.strictEqual(analyzer.evaluateMismatch(t1Context, undefined), null);
+    assert.strictEqual(analyzer.evaluateMismatch(t1Context, 'https://'), null);
+    assert.strictEqual(analyzer.evaluateMismatch(t1Context, 'not a valid url &&&&'), null);
+
+    // Missing context or missing brand claim
+    assert.strictEqual(analyzer.evaluateMismatch(null, 'https://attacker.com'), null);
+    assert.strictEqual(analyzer.evaluateMismatch({}, 'https://attacker.com'), null);
+    assert.strictEqual(analyzer.evaluateMismatch({ category: 'LOGIN_ACCOUNT' }, 'https://attacker.com'), null);
+
+    // Valid HTTP(S) attacker destination preserves mismatch behavior
+    const attackerMismatch = analyzer.evaluateMismatch(t1Context, 'https://attacker.com');
+    assert.notStrictEqual(attackerMismatch, null);
+    assert.strictEqual(attackerMismatch.mismatch, true);
+    assert.strictEqual(attackerMismatch.brandId, 'MICROSOFT');
+    assert.strictEqual(attackerMismatch.strength, 'STRONG');
+  });
+
+  // Test 19: Integrated Safety-Analysis Path Verification
+  countTest("Test 19: Integrated safety-analysis path verification", () => {
+    const safetyAnalyzer = loadSafetyAnalyzer();
+    const msContext = { possibleClaimedBrand: 'MICROSOFT', category: 'LOGIN_ACCOUNT' };
+
+    // 1. Valid official destination (NO_REDIRECT_OBSERVED)
+    const resOfficial = safetyAnalyzer.computeSafetyEvidence(
+      'https://microsoft.com',
+      { isHttps: true },
+      { severity: 'NONE', signals: [] },
+      null, null,
+      { status: 'NO_REDIRECT_OBSERVED' },
+      { status: 'NONE' },
+      null,
+      msContext
+    );
+    assert.strictEqual(resOfficial.status, 'NO_SIGNALS_DETECTED');
+    assert.strictEqual(resOfficial.signals.some(s => s.id === 'CLAIM_DESTINATION_MISMATCH'), false);
+
+    // 2. Valid HTTP official destination (NO_REDIRECT_OBSERVED) -> INFORMATIONAL due to HTTP_NOT_HTTPS, no mismatch
+    const resHttpOfficial = safetyAnalyzer.computeSafetyEvidence(
+      'http://microsoft.com',
+      { isHttps: false },
+      { severity: 'NONE', signals: [] },
+      null, null,
+      { status: 'NO_REDIRECT_OBSERVED' },
+      { status: 'NONE' },
+      null,
+      msContext
+    );
+    assert.strictEqual(resHttpOfficial.status, 'INFORMATIONAL');
+    assert.strictEqual(resHttpOfficial.signals.some(s => s.id === 'CLAIM_DESTINATION_MISMATCH'), false);
+
+    // 3. Valid HTTP(S) attacker destination -> UNUSUAL_CHARACTERISTICS with CLAIM_DESTINATION_MISMATCH
+    const resAttacker = safetyAnalyzer.computeSafetyEvidence(
+      'https://attacker.com',
+      { isHttps: true },
+      { severity: 'NONE', signals: [] },
+      null, null,
+      { status: 'NO_REDIRECT_OBSERVED' },
+      { status: 'NONE' },
+      null,
+      msContext
+    );
+    assert.strictEqual(resAttacker.status, 'UNUSUAL_CHARACTERISTICS');
+    assert.strictEqual(resAttacker.signals.some(s => s.id === 'CLAIM_DESTINATION_MISMATCH'), true);
+
+    // 4. Failed inspection (TIMEOUT) without observation -> LOCAL_ONLY, no mismatch manufactured
+    const resTimeout = safetyAnalyzer.computeSafetyEvidence(
+      'https://example.com',
+      { isHttps: true },
+      { severity: 'NONE', signals: [] },
+      null, null,
+      { status: 'FAILED', errorReason: 'TIMEOUT' },
+      { status: 'NONE' },
+      null,
+      msContext
+    );
+    assert.strictEqual(resTimeout.status, 'NO_SIGNALS_DETECTED');
+    assert.strictEqual(resTimeout.assessmentBasis, 'LOCAL_ONLY');
+    assert.strictEqual(resTimeout.signals.some(s => s.id === 'CLAIM_DESTINATION_MISMATCH'), false);
+
+    // 5. Unresolved shortener -> INCOMPLETE, no mismatch manufactured
+    const resShortener = safetyAnalyzer.computeSafetyEvidence(
+      'https://bit.ly/test',
+      { isHttps: true, isShortened: true },
+      { severity: 'NONE', signals: [] },
+      null, null,
+      { status: 'FAILED', errorReason: 'NETWORK_ERROR' },
+      { status: 'NONE' },
+      null,
+      msContext
+    );
+    assert.strictEqual(resShortener.assessmentBasis, 'INCOMPLETE');
+    assert.strictEqual(resShortener.signals.some(s => s.id === 'CLAIM_DESTINATION_MISMATCH'), false);
+
+    // 6. Strong correlation observation pointing to official destination
+    const resObserved = safetyAnalyzer.computeSafetyEvidence(
+      'https://short.io/link',
+      { isHttps: true },
+      { severity: 'NONE', signals: [] },
+      null, null,
+      { status: 'FAILED', errorReason: 'TIMEOUT' },
+      { status: 'STRONG_CORRELATION', observedLatestUrl: 'https://login.microsoft.com' },
+      null,
+      msContext
+    );
+    assert.strictEqual(resObserved.status, 'NO_SIGNALS_DETECTED');
+    assert.strictEqual(resObserved.signals.some(s => s.id === 'CLAIM_DESTINATION_MISMATCH'), false);
   });
 
   console.log(`All claim-destination-analyzer tests passed (${testCount} test blocks).`);
