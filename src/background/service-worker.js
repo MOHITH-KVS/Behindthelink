@@ -179,7 +179,7 @@ async function resolveDestination(originalUrlString, requestId, contextObj) {
     }
   }
 
-  let reputationSignals = { status: 'REPUTATION_PENDING' };
+  let reputationSignals = { status: 'REPUTATION_NOT_ENABLED' };
   
   const safetyEvidence = BTL.safetyAnalyzer ? BTL.safetyAnalyzer.computeSafetyEvidence(
     originalUrlString,

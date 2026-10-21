@@ -41,7 +41,7 @@ const windowMock = {
   requestAnimationFrame: (cb) => cb()
 };
 
-const BTL = {};
+let BTL = {};
 const sandbox = {
   window: Object.assign({ BehindTheLink: BTL }, windowMock),
   self: { BehindTheLink: BTL },
@@ -54,8 +54,22 @@ const sandbox = {
 };
 
 vm.createContext(sandbox);
-const uiCode = fs.readFileSync('./src/content/preview-ui.js', 'utf8');
-vm.runInContext(uiCode, sandbox);
+const modulesToLoad = [
+  './src/shared/constants.js',
+  './src/shared/brand-registry.js',
+  './src/shared/domain-utils.js',
+  './src/shared/lookalike-analyzer.js',
+  './src/content/shortener-registry.js',
+  './src/shared/deception-analyzer.js',
+  './src/shared/claim-destination-analyzer.js',
+  './src/shared/safety-analyzer.js',
+  './src/shared/assessment-aggregator.js',
+  './src/content/preview-ui.js'
+];
+for (const mod of modulesToLoad) {
+  vm.runInContext(fs.readFileSync(mod, 'utf8'), sandbox);
+}
+BTL = sandbox.window.BehindTheLink;
 
 let passed = 0;
 let total = 0;
@@ -115,11 +129,11 @@ runTest("UX-001: Normal link hierarchy and quiet state", () => {
 
   const evidenceEl = findElementsByClass(card, 'btl-evidence')[0];
   const evidence = evidenceEl.textContent;
-  assert.ok(evidence.includes('Destination verified'));
+  assert.ok(evidence.includes('Redirect not observed'));
   assert.ok(evidenceEl.className.includes('btl-evidence-neutral'));
 
   const status = findElementsByClass(card, 'btl-safety-status')[0].textContent;
-  assert.ok(status.includes('No obvious warning signs'), 'Should display quiet state fallback text');
+  assert.ok(status.includes('No obvious warning signals were detected'), 'Should display quiet state fallback text');
   
   const typeText = findElementsByClass(card, 'btl-text-main')[0].textContent;
   assert.strictEqual(typeText, 'Direct link');
@@ -171,7 +185,7 @@ runTest("UX-004: Unverified destination clear string", () => {
   });
   
   const evidence = findElementsByClass(card, 'btl-evidence')[0].textContent;
-  assert.ok(evidence.includes('Could not verify destination'));
+  assert.ok(evidence.includes('Destination unresolved or inspection incomplete'));
 });
 
 // 5. Predicted destination
@@ -286,6 +300,110 @@ runTest("UX-012: Actual HTTP redirect produces Redirecting link", () => {
   });
   const typeText = findElementsByClass(card, 'btl-text-main')[0].textContent;
   assert.strictEqual(typeText, 'Redirecting link');
+});
+
+runTest("UX-013: Shortened link with NO_REDIRECT_OBSERVED marks destination unresolved", () => {
+  const card = getCard({
+    originalUrl: 'https://t.me/invitegroup',
+    localSignals: { hostname: 't.me', isShortened: true },
+    networkEvidence: { status: 'NO_REDIRECT_OBSERVED' },
+    safetyEvidence: { status: 'NO_SIGNALS_DETECTED', signals: [] }
+  });
+  const evidence = findElementsByClass(card, 'btl-evidence')[0].textContent;
+  assert.ok(evidence.includes('destination unresolved'), 'Shortened link must state destination is unresolved');
+});
+
+runTest("UX-014: Disabled reputation renders non-spinning informational text", () => {
+  const card = getCard({
+    originalUrl: 'https://example.com',
+    safetyEvidence: { 
+      status: 'NO_SIGNALS_DETECTED',
+      reputationStatus: 'REPUTATION_NOT_ENABLED'
+    }
+  });
+  const statuses = findElementsByClass(card, 'btl-safety-status').map(e => e.textContent);
+  assert.ok(statuses[0].includes('External reputation checking is not enabled'));
+  assert.ok(!statuses[0].includes('Checking reputation'));
+});
+
+runTest("UX-015: Ordinary Amazon shopping link with payment and delivery stays INFORMATIONAL", () => {
+  const safetyResult = BTL.safetyAnalyzer.computeSafetyEvidence(
+    'https://amazon.in/checkout',
+    { isShortened: false, isHttps: true },
+    { signals: [] },
+    null,
+    null,
+    { status: 'NO_REDIRECT_OBSERVED' },
+    null,
+    { status: 'REPUTATION_NOT_ENABLED' },
+    {
+      category: 'PAYMENT',
+      visibleText: 'Confirm delivery address and make payment for your order'
+    }
+  );
+
+  assert.strictEqual(safetyResult.status, 'INFORMATIONAL', 'Ordinary shopping intent must not become UNUSUAL_CHARACTERISTICS');
+  assert.strictEqual(safetyResult.localStatus, 'INFORMATIONAL');
+  assert.strictEqual(safetyResult.reputationStatus, 'REPUTATION_NOT_ENABLED');
+});
+
+runTest("UX-016: Legitimate job application stays INFORMATIONAL", () => {
+  const safetyResult = BTL.safetyAnalyzer.computeSafetyEvidence(
+    'https://careers.google.com/jobs/results/',
+    { isShortened: false, isHttps: true },
+    { signals: [] },
+    null,
+    null,
+    { status: 'NO_REDIRECT_OBSERVED' },
+    null,
+    { status: 'REPUTATION_NOT_ENABLED' },
+    {
+      category: 'JOB_HIRING',
+      visibleText: 'Apply now for this career opportunity'
+    }
+  );
+
+  assert.strictEqual(safetyResult.status, 'INFORMATIONAL', 'Job application link must stay INFORMATIONAL');
+});
+
+runTest("UX-017: Sensitive action context strengthens lookalike concern to UNUSUAL_CHARACTERISTICS", () => {
+  const safetyResult = BTL.safetyAnalyzer.computeSafetyEvidence(
+    'https://g00gle.com',
+    { isShortened: false, isHttps: true },
+    { signals: [] },
+    null,
+    null,
+    { status: 'NO_REDIRECT_OBSERVED' },
+    null,
+    { status: 'REPUTATION_NOT_ENABLED' },
+    {
+      category: 'LOGIN_ACCOUNT',
+      visibleText: 'Please sign in to update your account'
+    }
+  );
+
+  assert.strictEqual(safetyResult.status, 'UNUSUAL_CHARACTERISTICS', 'Lookalike + sensitive context must escalate');
+});
+
+runTest("UX-018: Brand mismatch with claimed brand and observed destination domain", () => {
+  const safetyResult = BTL.safetyAnalyzer.computeSafetyEvidence(
+    'https://phishing-site.com',
+    { isShortened: false, isHttps: true },
+    { signals: [] },
+    null,
+    null,
+    { status: 'NO_REDIRECT_OBSERVED' },
+    null,
+    { status: 'REPUTATION_NOT_ENABLED' },
+    {
+      possibleClaimedBrand: 'AMAZON',
+      category: 'LOGIN_ACCOUNT',
+      visibleText: 'Sign in to Amazon'
+    }
+  );
+
+  assert.strictEqual(safetyResult.status, 'UNUSUAL_CHARACTERISTICS', 'Brand mismatch must be UNUSUAL_CHARACTERISTICS');
+  assert.ok(safetyResult.userGuidance.whyText.includes('Amazon') && safetyResult.userGuidance.whyText.includes('phishing-site.com'), 'Must name claimed brand and observed destination');
 });
 
 console.log(`\nResults: ${passed}/${total} passed`);

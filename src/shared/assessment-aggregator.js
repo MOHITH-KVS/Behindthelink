@@ -105,6 +105,11 @@
     }
     
     if (hasMismatch) {
+      for (var m = 0; m < signals.length; m++) {
+        if (signals[m].id === 'CLAIM_DESTINATION_MISMATCH' && signals[m].detail) {
+          return signals[m].detail;
+        }
+      }
       return "The link mentions a brand, but the destination is not an official domain.";
     }
 
@@ -121,7 +126,16 @@
     }
     
     if (hasStructural) {
+      for (var s = 0; s < signals.length; s++) {
+        if (signals[s].tier === 'B' && signals[s].detail) {
+          return signals[s].detail;
+        }
+      }
       return "The destination has characteristics that are worth checking before continuing.";
+    }
+
+    if (hasPayment && hasDelivery) {
+      return "This link appears to relate to shopping, payment, or delivery details.";
     }
     
     // Default fallback to single signal's detail if available and nothing else matched
@@ -168,6 +182,10 @@
 
     if (hasLookalike) {
       return "Check the domain spelling carefully before proceeding or signing in.";
+    }
+
+    if (hasPayment && hasDelivery) {
+      return "Verify the destination before entering payment or delivery details.";
     }
     
     if (sensitiveCount > 1) {

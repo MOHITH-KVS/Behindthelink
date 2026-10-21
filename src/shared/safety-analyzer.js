@@ -523,18 +523,30 @@
     }
 
     // --- STEP 5: Determine status from Tier B/C signals ---
-    var activeDimensions = {};
+    var technicalDimensions = {};
     tierB.forEach(function (s) {
-      if (s.dimension) activeDimensions[s.dimension] = true;
+      if (s.dimension) technicalDimensions[s.dimension] = true;
     });
+
+    var brandDimensions = {};
     var hasMismatch = false;
+    var contextDimensions = {};
+
     tierC.forEach(function (s) {
-      if (s.dimension) activeDimensions[s.dimension] = true;
-      if (s.id === 'CLAIM_DESTINATION_MISMATCH') hasMismatch = true;
+      if (s.id === 'CLAIM_DESTINATION_MISMATCH') {
+        hasMismatch = true;
+        brandDimensions[s.dimension || 'claim_destination'] = true;
+      } else if (s.dimension === 'brand_identity') {
+        brandDimensions['brand_identity'] = true;
+      } else if (s.dimension) {
+        contextDimensions[s.dimension] = true;
+      }
     });
-    var dimensionCount = Object.keys(activeDimensions).length;
+
+    var hasIndependentConcern = (Object.keys(technicalDimensions).length > 0) || (Object.keys(brandDimensions).length > 0);
+    var totalDimensions = Object.keys(technicalDimensions).length + Object.keys(brandDimensions).length + Object.keys(contextDimensions).length;
     var localStatus;
-    var reputationStatus = 'NO_REPUTATION_VERDICT';
+    var reputationStatus = 'REPUTATION_NOT_ENABLED';
     
     // --- STEP 4.5: Check Reputation (Tier D) ---
     if (reputationSignals) {
@@ -554,12 +566,18 @@
         reputationStatus = 'NO_KNOWN_THREAT';
       } else if (reputationSignals.status === 'REPUTATION_UNAVAILABLE') {
         reputationStatus = 'REPUTATION_UNAVAILABLE';
+      } else if (reputationSignals.status === 'REPUTATION_NOT_ENABLED') {
+        reputationStatus = 'REPUTATION_NOT_ENABLED';
+      } else if (reputationSignals.status === 'REPUTATION_PENDING') {
+        reputationStatus = 'REPUTATION_PENDING';
       }
     }
 
     if (tierB.length === 0 && tierC.length === 0) {
       localStatus = (tierA.length > 0) ? 'INFORMATIONAL' : 'NO_SIGNALS_DETECTED';
-    } else if (dimensionCount >= 2 || hasMismatch) {
+    } else if (hasMismatch) {
+      localStatus = 'UNUSUAL_CHARACTERISTICS';
+    } else if (hasIndependentConcern && totalDimensions >= 2) {
       localStatus = 'UNUSUAL_CHARACTERISTICS';
     } else {
       localStatus = 'INFORMATIONAL';

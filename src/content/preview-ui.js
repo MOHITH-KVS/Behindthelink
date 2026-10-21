@@ -65,11 +65,11 @@
 
   function setReputationLoading() {
     if (!lastPayload || !cardElement || !shouldBeVisible) return;
-    if (lastPayload.safetyEvidence) {
+    if (lastPayload.safetyEvidence && lastPayload.safetyEvidence.reputationStatus !== 'REPUTATION_NOT_ENABLED') {
       lastPayload.safetyEvidence.reputationStatus = 'REPUTATION_PENDING';
+      render(lastPayload, false);
+      positionCard(currentLinkElement);
     }
-    render(lastPayload, false);
-    positionCard(currentLinkElement);
   }
 
   function updateReputationResult(repResponse) {
@@ -161,18 +161,15 @@
     var destUrl = document.createElement('div');
     destUrl.className = 'btl-dest-url';
     var destEvidence = document.createElement('div');
-    
+    var isShortened = locals.isShortened || (BTL.shortenerRegistry && BTL.shortenerRegistry.isShortener(domain));
+
     if (isLoading) {
       destUrl.textContent = 'Checking destination…';
       destUrl.style.color = '#6b7280';
       destEvidence.className = 'btl-evidence';
     } else if (net.status === 'HTTP_REDIRECT_OBSERVED' && net.redirectTarget) {
       destUrl.textContent = formatTargetUrl(net.redirectTarget);
-      destEvidence.textContent = '✓ Redirect destination confirmed';
-      destEvidence.className = 'btl-evidence btl-evidence-neutral';
-    } else if (net.status === 'NO_REDIRECT_OBSERVED') {
-      destUrl.textContent = domain;
-      destEvidence.textContent = '✓ Destination verified';
+      destEvidence.textContent = 'Redirect observed and final destination confirmed';
       destEvidence.className = 'btl-evidence btl-evidence-neutral';
     } else if (obs.status === 'STRONG_CORRELATION' && obs.observedLatestUrl) {
       destUrl.textContent = formatTargetUrl(obs.observedLatestUrl);
@@ -182,9 +179,17 @@
       destUrl.textContent = formatTargetUrl(locals.embeddedCandidates[0]);
       destEvidence.textContent = 'Likely destination';
       destEvidence.className = 'btl-evidence btl-evidence-neutral';
+    } else if (net.status === 'NO_REDIRECT_OBSERVED') {
+      destUrl.textContent = domain;
+      if (isShortened) {
+        destEvidence.textContent = 'Redirect not observed (destination unresolved)';
+      } else {
+        destEvidence.textContent = 'Redirect not observed';
+      }
+      destEvidence.className = 'btl-evidence btl-evidence-neutral';
     } else {
       destUrl.textContent = domain;
-      destEvidence.textContent = 'Could not verify destination';
+      destEvidence.textContent = 'Destination unresolved or inspection incomplete';
       destEvidence.className = 'btl-evidence btl-evidence-neutral';
     }
     
@@ -210,7 +215,7 @@
     safetyLabel.textContent = 'SAFETY';
     safetyBlock.appendChild(safetyLabel);
     
-    if (safety.reputationStatus && safety.reputationStatus !== 'REPUTATION_NOT_ENABLED') {
+    if (safety.reputationStatus) {
       var repStatusEl = document.createElement('div');
       repStatusEl.className = 'btl-safety-status';
       var repIcon = document.createElement('span');
@@ -228,6 +233,10 @@
         case 'REPUTATION_PENDING':
           repIcon.textContent = '⟳'; repIcon.style.color = '#6b7280';
           repText.textContent = 'Checking reputation…'; repText.style.color = '#6b7280';
+          break;
+        case 'REPUTATION_NOT_ENABLED':
+          repIcon.textContent = '—'; repIcon.style.color = '#9ca3af';
+          repText.textContent = 'External reputation checking is not enabled.'; repText.style.color = '#6b7280';
           break;
         case 'REPUTATION_UNAVAILABLE':
         case 'NO_REPUTATION_VERDICT':
@@ -252,7 +261,7 @@
     switch (localStatus) {
       case 'NO_SIGNALS_DETECTED':
         sIcon.textContent = '—'; sIcon.style.color = '#9ca3af';
-        sText.textContent = 'No obvious warning signs were found in the link or surrounding context.'; sText.style.color = '#6b7280';
+        sText.textContent = 'No obvious warning signals were detected in the information inspected. This does not guarantee the site is safe.'; sText.style.color = '#6b7280';
         break;
       case 'INFORMATIONAL':
         sIcon.textContent = 'ℹ'; sIcon.style.color = '#64748b';
