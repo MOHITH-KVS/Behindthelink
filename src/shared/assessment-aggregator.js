@@ -15,6 +15,9 @@
   var PRIORITY_MAP = {
     'REPUTATION_CONFIRMED_THREAT': 1,
     'CLAIM_DESTINATION_MISMATCH': 2,
+    'MISLEADING_SUBDOMAIN_STRUCTURE': 2.1,
+    'LOOKALIKE_DOMAIN_SIMILARITY': 2.2,
+    'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN': 2.3,
     
     // Structural characteristics (Level 2)
     'IP_HOST': 3,
@@ -55,7 +58,10 @@
       'HEAVY_ENCODING': 'Heavy URL encoding',
       'SENSITIVE_ACTION_PATH': 'Sensitive action in the URL',
       'HTTP_NOT_HTTPS': 'Unencrypted connection (HTTP)',
-      'CLAIM_DESTINATION_MISMATCH': 'The link mentions a brand, but the destination is not an official domain.'
+      'CLAIM_DESTINATION_MISMATCH': 'The link mentions a brand, but the destination is not an official domain.',
+      'LOOKALIKE_DOMAIN_SIMILARITY': 'The destination domain closely resembles a known brand.',
+      'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN': 'A brand name is included in an unrelated domain.',
+      'MISLEADING_SUBDOMAIN_STRUCTURE': 'The destination uses a brand name in a misleading subdomain.'
     };
     return map[signalId] || defaultLabel;
   }
@@ -69,6 +75,9 @@
 
   function generateWhyText(signals, rawSignals) {
     var hasMismatch = hasSignal(signals, 'CLAIM_DESTINATION_MISMATCH');
+    var hasLookalike = hasSignal(signals, 'LOOKALIKE_DOMAIN_SIMILARITY') ||
+                       hasSignal(signals, 'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN') ||
+                       hasSignal(signals, 'MISLEADING_SUBDOMAIN_STRUCTURE');
     var hasPressure = hasSignal(signals, 'URGENT_LANGUAGE');
     var hasAccount = hasSignal(signals, 'ACCOUNT_ACTION');
     var hasPayment = hasSignal(signals, 'PAYMENT_ACTION');
@@ -99,6 +108,14 @@
       return "The link mentions a brand, but the destination is not an official domain.";
     }
 
+    if (hasLookalike && hasSensitive) {
+      return "The destination closely resembles a known brand and requests account or sensitive actions.";
+    }
+
+    if (hasLookalike) {
+      return "The destination domain closely resembles a known brand, but is not verified as official.";
+    }
+
     if (hasPressure && hasSensitive) {
       return "This link combines time pressure with an action involving your account or information.";
     }
@@ -124,6 +141,9 @@
 
   function generateActionText(signals) {
     var hasMismatch = hasSignal(signals, 'CLAIM_DESTINATION_MISMATCH');
+    var hasLookalike = hasSignal(signals, 'LOOKALIKE_DOMAIN_SIMILARITY') ||
+                       hasSignal(signals, 'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN') ||
+                       hasSignal(signals, 'MISLEADING_SUBDOMAIN_STRUCTURE');
     var hasAccount = hasSignal(signals, 'ACCOUNT_ACTION');
     var hasPayment = hasSignal(signals, 'PAYMENT_ACTION');
     var hasReward = hasSignal(signals, 'REWARD_OFFER_ACTION');
@@ -144,6 +164,10 @@
 
     if (hasMismatch) {
       return "Check the destination domain before entering sensitive information.";
+    }
+
+    if (hasLookalike) {
+      return "Check the domain spelling carefully before proceeding or signing in.";
     }
     
     if (sensitiveCount > 1) {

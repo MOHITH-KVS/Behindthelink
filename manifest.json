@@ -10,6 +10,7 @@
       "js": [
         "src/shared/constants.js",
         "src/shared/brand-registry.js",
+        "src/shared/domain-utils.js",
         "src/content/link-eligibility.js",
         "src/content/tracking-registry.js",
         "src/content/shortener-registry.js",

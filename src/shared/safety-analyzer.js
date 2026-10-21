@@ -32,7 +32,10 @@
     'UNUSUAL_PORT':      'connection',
     'HTTP_NOT_HTTPS':    'connection',
     'HEAVY_ENCODING':    'encoding',
-    'SUSPICIOUS_FILE_EXT': 'path_content'
+    'SUSPICIOUS_FILE_EXT': 'path_content',
+    'LOOKALIKE_DOMAIN_SIMILARITY':        'brand_identity',
+    'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN': 'brand_identity',
+    'MISLEADING_SUBDOMAIN_STRUCTURE':     'brand_identity'
   };
 
   function getLabel(signalType, urlContext) {
@@ -65,6 +68,12 @@
         return 'Contains tracking parameters';
       case 'HAS_AFFILIATE':
         return 'Contains affiliate/referral parameter';
+      case 'LOOKALIKE_DOMAIN_SIMILARITY':
+        return isTarget ? 'Destination closely resembles a known brand' : 'Domain closely resembles a known brand';
+      case 'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN':
+        return isTarget ? 'Destination embeds a brand name in an unrelated domain' : 'Embeds a brand name in an unrelated domain';
+      case 'MISLEADING_SUBDOMAIN_STRUCTURE':
+        return isTarget ? 'Destination uses a brand name in a misleading subdomain' : 'Uses a brand name in a misleading subdomain';
       case 'SENSITIVE_ACTION_PATH':
       case 'CONTEXT_LOGIN':
         return 'URL appears related to login';
@@ -115,6 +124,10 @@
         return 'The link contains recognized tracking query parameters' + (extra ? ' (' + extra + ')' : '') + '.';
       case 'HAS_AFFILIATE':
         return 'The link contains a recognized affiliate or referral parameter.';
+      case 'LOOKALIKE_DOMAIN_SIMILARITY':
+      case 'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN':
+      case 'MISLEADING_SUBDOMAIN_STRUCTURE':
+        return extra || 'The destination domain closely resembles a known brand name but is not verified as official.';
       case 'SENSITIVE_ACTION_PATH':
       case 'CONTEXT_LOGIN':
       case 'CONTEXT_PAYMENT':
@@ -156,8 +169,12 @@
     }
   }
 
-  // Basic e2LD comparison. Does not handle complex public suffixes perfectly but handles typical cases.
+  // Domain comparison: delegates to BTL.domainUtils with PSL awareness, falling back if not loaded
   function differentRegistrableDomain(url1, url2) {
+    if (BTL.domainUtils && typeof BTL.domainUtils.differentRegistrableDomain === 'function') {
+      return BTL.domainUtils.differentRegistrableDomain(url1, url2);
+    }
+
     var host1 = getHostname(url1);
     var host2 = getHostname(url2);
     if (!host1 || !host2) return false;
@@ -175,7 +192,7 @@
     var parts1 = host1.split('.');
     var parts2 = host2.split('.');
     
-    // Very naive, fallback logic
+    // Fallback logic
     var e2ld1 = parts1.slice(-2).join('.');
     var e2ld2 = parts2.slice(-2).join('.');
     
@@ -480,6 +497,29 @@
     if (contextObj && BTL.deceptionAnalyzer) {
       var deceptionSignals = BTL.deceptionAnalyzer.analyzeDeception(contextObj);
       tierC = tierC.concat(deceptionSignals);
+    }
+
+    // --- STEP 4.4: Evaluate Lookalike Domain Signals ---
+    if (verifiedDestination && assessmentBasis !== 'INCOMPLETE' && BTL.lookalikeAnalyzer) {
+      var lookalike = BTL.lookalikeAnalyzer.detectLookalike(verifiedDestination, contextObj);
+      if (lookalike) {
+        tierC.push({
+          id: lookalike.signalId,
+          tier: 'C',
+          dimension: 'brand_identity',
+          urlContext: (verifiedDestination === originalUrl) ? 'original_url' : 'network_target_url',
+          source: mismatchSource || 'destination_url',
+          epistemic: 'HEURISTIC',
+          label: getLabel(lookalike.signalId, (verifiedDestination === originalUrl) ? 'original_url' : 'network_target_url'),
+          detail: lookalike.detail,
+          metadata: {
+            brandId: lookalike.brandId,
+            brandName: lookalike.brandName,
+            detectionType: lookalike.detectionType,
+            detectedDomain: lookalike.detectedDomain
+          }
+        });
+      }
     }
 
     // --- STEP 5: Determine status from Tier B/C signals ---

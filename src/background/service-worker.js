@@ -9,6 +9,8 @@
 importScripts(
   '../shared/constants.js',
   '../shared/brand-registry.js',
+  '../shared/domain-utils.js',
+  '../shared/lookalike-analyzer.js',
   '../content/tracking-registry.js',
   '../content/shortener-registry.js',
   '../content/affiliate-registry.js',
