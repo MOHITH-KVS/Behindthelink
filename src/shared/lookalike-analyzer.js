@@ -345,6 +345,51 @@
       }
     }
 
+    // Multi-tenant hosting platforms (PSL Private Domains)
+    var MULTI_TENANT_SUFFIXES = {
+      'github.io': true, 'gitlab.io': true, 'pages.dev': true, 'workers.dev': true,
+      'web.app': true, 'firebaseapp.com': true, 'azurewebsites.net': true,
+      'herokuapp.com': true, 'vercel.app': true, 'netlify.app': true,
+      'cloudfront.net': true, 's3.amazonaws.com': true
+    };
+
+    // STEP 4b: Attacker-Controlled Sibling Domains & Unauthorized Multi-Tenant Hosting
+    // Detects when an attacker registers the exact brand stem under an unofficial TLD
+    // (e.g. paypal.xyz, google.top, netflix.biz) or on a multi-tenant hosting platform (e.g. microsoft.azurewebsites.net, paypal.firebaseapp.com).
+    var isMultiTenant = !!MULTI_TENANT_SUFFIXES[parsed.publicSuffix];
+    for (var b4b = 0; b4b < allBrands.length; b4b++) {
+      var brand4b = allBrands[b4b];
+      var isExcluded = BTL.brandRegistry.isExcludedSubdomain(brand4b.id, hostname);
+      var stems4b = getBrandTargetStems(brand4b);
+
+      for (var s4b = 0; s4b < stems4b.length; s4b++) {
+        var targetInfo4b = stems4b[s4b];
+        var targetStem4b = targetInfo4b.stem;
+
+        if (domainStem === targetStem4b) {
+          // Guardrails:
+          // 1. Generic words (apple) or short stems (< 5 chars: sbi, aws, meta):
+          //    only flag if hosted on an excluded subdomain or multi-tenant hosting platform
+          // 2. Distinctive, non-generic brands (paypal, google, microsoft, netflix, etc.):
+          //    flag on any unofficial TLD or hosting platform
+          var requireSpecificHosting = targetInfo4b.isGeneric || targetInfo4b.isShort;
+          if (!requireSpecificHosting || isExcluded || isMultiTenant) {
+            return {
+              signalId: 'LOOKALIKE_DOMAIN_SIMILARITY',
+              brandId: brand4b.id,
+              brandName: brand4b.displayName,
+              detectionType: 'ATTACKER_SIBLING_DOMAIN',
+              detectedDomain: registrableDomain,
+              matchedStem: domainStem,
+              targetStem: targetStem4b,
+              reason: 'Domain "' + registrableDomain + '" uses brand name "' + targetStem4b + '" under an unofficial domain suffix or hosting provider',
+              detail: 'The destination domain "' + registrableDomain + '" uses the brand name ' + brand4b.displayName + ' ("' + targetStem4b + '"), but is not verified as an official domain.'
+            };
+          }
+        }
+      }
+    }
+
     // STEP 5: VECTOR 4 — Bounded Typosquatting: Edit Distance (Damerau-Levenshtein <= 1)
     for (var b4 = 0; b4 < allBrands.length; b4++) {
       var brand4 = allBrands[b4];

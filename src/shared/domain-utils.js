@@ -89,6 +89,15 @@
     WILDCARD_SET[PSL_WILDCARDS[w]] = true;
   }
 
+  // Common second-level hierarchy tokens used across ccTLDs worldwide
+  var COMMON_CCTLD_SECOND_LEVELS = {
+    'co': true, 'com': true, 'net': true, 'org': true, 'edu': true, 'gov': true,
+    'ac': true, 'mil': true, 'gen': true, 'ind': true, 'res': true, 'firm': true,
+    'ltd': true, 'plc': true, 'sch': true, 'me': true, 'or': true, 'ne': true,
+    'go': true, 'ed': true, 'gob': true, 'gub': true, 'nom': true, 'idv': true,
+    'tur': true, 'art': true, 'biz': true, 'info': true, 'web': true
+  };
+
   // IPv4 regex (strict 4 octets between 0 and 255)
   var IPV4_REGEX = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
 
@@ -207,6 +216,17 @@
         if (MULTI_PART_SET[multiCandidate]) {
           return { suffix: multiCandidate, known: true };
         }
+      }
+    }
+
+    // 3b. Detect Unlisted Multi-Part ccTLD Suffixes (e.g. .co.rw, .ac.rw, .gov.xx)
+    // If the hostname ends with <secondary>.<2-letter-cctld> where <secondary> is a common
+    // ccTLD hierarchy token but not in our curated table, mark as unknown/inconclusive.
+    if (labels.length >= 2) {
+      var last = labels[labels.length - 1];
+      var secondLast = labels[labels.length - 2];
+      if (/^[a-z]{2}$/.test(last) && COMMON_CCTLD_SECOND_LEVELS[secondLast]) {
+        return { suffix: secondLast + '.' + last, known: false };
       }
     }
 

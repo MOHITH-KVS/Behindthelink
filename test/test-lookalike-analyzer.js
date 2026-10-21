@@ -120,6 +120,43 @@ assert.strictEqual(ed4.brandId, 'MICROSOFT');
 console.log('[PASS] Vector 4: Bounded edit-distance typosquatting detected');
 
 // ==========================================
+// 4b. Vector 4b: Attacker Sibling Domains & Multi-Tenant Hosting
+// ==========================================
+const sib1 = la.detectLookalike('https://paypal.xyz');
+assert(sib1, 'paypal.xyz must be flagged as attacker sibling domain');
+assert.strictEqual(sib1.signalId, 'LOOKALIKE_DOMAIN_SIMILARITY');
+assert.strictEqual(sib1.detectionType, 'ATTACKER_SIBLING_DOMAIN');
+assert.strictEqual(sib1.brandId, 'PAYPAL');
+
+const sib2 = la.detectLookalike('https://google.top');
+assert(sib2, 'google.top must be flagged as attacker sibling domain');
+assert.strictEqual(sib2.detectionType, 'ATTACKER_SIBLING_DOMAIN');
+assert.strictEqual(sib2.brandId, 'GOOGLE');
+
+const sib3 = la.detectLookalike('https://netflix.biz');
+assert(sib3, 'netflix.biz must be flagged as attacker sibling domain');
+assert.strictEqual(sib3.detectionType, 'ATTACKER_SIBLING_DOMAIN');
+assert.strictEqual(sib3.brandId, 'NETFLIX');
+
+// Multi-tenant / excluded hosting masquerades
+const host1 = la.detectLookalike('https://microsoft.azurewebsites.net');
+assert(host1, 'microsoft.azurewebsites.net must be flagged as hosting masquerade');
+assert.strictEqual(host1.detectionType, 'ATTACKER_SIBLING_DOMAIN');
+assert.strictEqual(host1.brandId, 'MICROSOFT');
+
+const host2 = la.detectLookalike('https://paypal.firebaseapp.com');
+assert(host2, 'paypal.firebaseapp.com must be flagged as hosting masquerade');
+assert.strictEqual(host2.detectionType, 'ATTACKER_SIBLING_DOMAIN');
+assert.strictEqual(host2.brandId, 'PAYPAL');
+
+const host3 = la.detectLookalike('https://apple.firebaseapp.com');
+assert(host3, 'apple.firebaseapp.com must be flagged as hosting masquerade');
+assert.strictEqual(host3.detectionType, 'ATTACKER_SIBLING_DOMAIN');
+assert.strictEqual(host3.brandId, 'APPLE');
+
+console.log('[PASS] Vector 4b: Attacker sibling domains & multi-tenant hosting masquerades detected');
+
+// ==========================================
 // 5. Vector 5: Brand Tokens Embedded in Unrelated Domains
 // ==========================================
 const emb1 = la.detectLookalike('https://paypal-security.com');
@@ -177,9 +214,11 @@ assert.strictEqual(la.detectLookalike('https://apply.com'), null, 'apply.com mus
 assert.strictEqual(la.detectLookalike('https://maple.com'), null, 'maple.com must not be flagged for apple');
 assert.strictEqual(la.detectLookalike('https://apple-pie.com'), null, 'apple-pie.com must not be flagged without sensitive keyword');
 assert.strictEqual(la.detectLookalike('https://pineapple.com'), null, 'pineapple must not be flagged (no token boundary)');
+assert.strictEqual(la.detectLookalike('https://apple.xyz'), null, 'generic word apple on arbitrary TLD without sensitive context must not be flagged');
 
 // Short stems without sensitive keywords or substring collisions
 assert.strictEqual(la.detectLookalike('https://sb1.com'), null, 'sb1.com without sensitive keyword should not be flagged');
+assert.strictEqual(la.detectLookalike('https://aws.xyz'), null, 'short stem aws on arbitrary TLD without sensitive context should not be flagged');
 assert.strictEqual(la.detectLookalike('https://metallic.com'), null, 'metallic must not match meta');
 assert.strictEqual(la.detectLookalike('https://broadway.com'), null, 'broadway must not match aws');
 console.log('[PASS] Generic words and short stems protected against false positives');

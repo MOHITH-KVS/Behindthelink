@@ -130,7 +130,7 @@ assert.strictEqual(pIp6.registrableDomain, null);
 
 console.log('[PASS] IPv4 and IPv6 parsed without creating false registrable domains');
 
-// 8. Inconclusive fallback
+// 8. Inconclusive fallback & unlisted multi-part ccTLDs
 const pLocal = du.parseDomain('http://localhost');
 assert.strictEqual(pLocal.publicSuffixKnown, false);
 assert.strictEqual(pLocal.isInconclusive, true);
@@ -140,7 +140,13 @@ const pInvalid = du.parseDomain('');
 assert.strictEqual(pInvalid.isInconclusive, true);
 assert.strictEqual(pInvalid.registrableDomain, null);
 
-console.log('[PASS] Inconclusive fallback for single-label and malformed inputs');
+// Unlisted multi-part ccTLD (e.g. .co.rw) must produce inconclusive result
+const pRw = du.parseDomain('https://example.co.rw');
+assert.strictEqual(pRw.publicSuffixKnown, false, 'Unlisted multi-part .co.rw must be marked unknown');
+assert.strictEqual(pRw.isInconclusive, true, 'Unlisted multi-part .co.rw must be marked inconclusive');
+assert.strictEqual(pRw.registrableDomain, null, 'Unlisted multi-part .co.rw must not produce false registrable domain');
+
+console.log('[PASS] Inconclusive fallback for single-label, malformed, and unlisted multi-part ccTLDs (.co.rw)');
 
 // 9. differentRegistrableDomain
 assert.strictEqual(du.differentRegistrableDomain('https://a.google.co.uk', 'https://b.google.co.uk'), false);
@@ -148,7 +154,11 @@ assert.strictEqual(du.differentRegistrableDomain('https://a.google.co.uk', 'http
 assert.strictEqual(du.differentRegistrableDomain('https://user1.github.io', 'https://user2.github.io'), true);
 assert.strictEqual(du.differentRegistrableDomain('http://192.168.1.1', 'http://192.168.1.1'), false);
 assert.strictEqual(du.differentRegistrableDomain('http://192.168.1.1', 'http://192.168.1.2'), true);
-console.log('[PASS] differentRegistrableDomain comparison across multi-part TLDs and IPs');
+
+// Unlisted multi-part ccTLDs: different hostnames must be treated as different domains
+assert.strictEqual(du.differentRegistrableDomain('https://alice.co.rw', 'https://bob.co.rw'), true, 'Different hosts under unlisted ccTLD must be treated as different domains');
+assert.strictEqual(du.differentRegistrableDomain('https://alice.co.rw', 'https://alice.co.rw'), false, 'Identical hosts under unlisted ccTLD must be treated as same');
+console.log('[PASS] differentRegistrableDomain comparison across multi-part TLDs, IPs, and inconclusive domains');
 
 // 10. decodePunycode & mapHomoglyphs
 assert.strictEqual(du.decodePunycode('example.com'), 'example.com');
