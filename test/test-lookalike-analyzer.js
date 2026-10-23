@@ -320,12 +320,12 @@ console.log('[PASS] Safety Analyzer end-to-end status determination & dimension 
 // ==========================================
 assert(resAlone.userGuidance, 'userGuidance must be generated');
 assert.strictEqual(resAlone.userGuidance.displaySignals.length, 1);
-assert.strictEqual(resAlone.userGuidance.displaySignals[0].label, 'The destination domain closely resembles a known brand.');
-assert.strictEqual(resAlone.userGuidance.whyText, 'The destination domain closely resembles a known brand, but is not verified as official.');
+assert.strictEqual(resAlone.userGuidance.displaySignals[0].label, 'The destination domain uses digit substitutions resembling Google ("google").');
+assert.ok(resAlone.userGuidance.whyText.includes('Google') && resAlone.userGuidance.whyText.includes('digit substitutions'));
 assert.strictEqual(resAlone.userGuidance.actionText, 'Check the domain spelling carefully before proceeding or signing in.');
 
 assert(resSensitive.userGuidance, 'userGuidance for sensitive link must be generated');
-assert.strictEqual(resSensitive.userGuidance.whyText, 'The destination closely resembles a known brand and requests account or sensitive actions.');
+assert.ok(resSensitive.userGuidance.whyText.includes('Google') && resSensitive.userGuidance.whyText.includes('account or sensitive actions'));
 
 console.log('[PASS] Assessment Aggregator user guidance and human-readable text verified');
 

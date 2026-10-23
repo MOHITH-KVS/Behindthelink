@@ -38,7 +38,8 @@
     'REWARD_OFFER_ACTION': 23,
     'DELIVERY_ACTION': 24,
     'VERIFICATION_ACTION': 25,
-    'JOB_ACTION': 26
+    'JOB_ACTION': 26,
+    'DOWNLOAD_OR_MEDIA_CONTEXT': 27
   };
 
   function getPriority(signalId) {
@@ -46,7 +47,17 @@
   }
 
   // Technical -> Human translation
-  function humanizeLabel(signalId, defaultLabel) {
+  function humanizeLabel(signalId, defaultLabel, sig) {
+    if (sig) {
+      if (sig.id === 'CLAIM_DESTINATION_MISMATCH' && sig.detail) {
+        return sig.detail;
+      }
+      if ((sig.id === 'LOOKALIKE_DOMAIN_SIMILARITY' ||
+           sig.id === 'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN' ||
+           sig.id === 'MISLEADING_SUBDOMAIN_STRUCTURE') && sig.detail) {
+        return sig.detail;
+      }
+    }
     var map = {
       'IP_HOST': 'IP-address destination',
       'IP_HOST_V4': 'IP-address destination',
@@ -61,7 +72,8 @@
       'CLAIM_DESTINATION_MISMATCH': 'The link mentions a brand, but the destination is not an official domain.',
       'LOOKALIKE_DOMAIN_SIMILARITY': 'The destination domain closely resembles a known brand.',
       'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN': 'A brand name is included in an unrelated domain.',
-      'MISLEADING_SUBDOMAIN_STRUCTURE': 'The destination uses a brand name in a misleading subdomain.'
+      'MISLEADING_SUBDOMAIN_STRUCTURE': 'The destination uses a brand name in a misleading subdomain.',
+      'DOWNLOAD_OR_MEDIA_CONTEXT': 'Media or download context'
     };
     return map[signalId] || defaultLabel;
   }
@@ -84,9 +96,10 @@
     var hasReward = hasSignal(signals, 'REWARD_OFFER_ACTION');
     var hasDelivery = hasSignal(signals, 'DELIVERY_ACTION');
     var hasJob = hasSignal(signals, 'JOB_ACTION');
+    var hasMedia = hasSignal(signals, 'DOWNLOAD_OR_MEDIA_CONTEXT');
     var hasThreat = hasSignal(signals, 'REPUTATION_CONFIRMED_THREAT');
     var hasTracking = rawSignals && hasSignal(rawSignals, 'HAS_TRACKING_PARAMS');
-    var hasSensitive = hasAccount || hasPayment || hasReward || hasDelivery || hasJob;
+    var hasSensitive = hasAccount || hasPayment || hasReward || hasDelivery || hasJob || hasMedia;
     
     var hasStructural = false;
     for (var i = 0; i < signals.length; i++) {
@@ -107,17 +120,31 @@
     if (hasMismatch) {
       for (var m = 0; m < signals.length; m++) {
         if (signals[m].id === 'CLAIM_DESTINATION_MISMATCH' && signals[m].detail) {
-          return signals[m].detail;
+          return signals[m].detail + " Links that claim a trusted service but lead to an unrelated domain are frequently used in phishing.";
         }
       }
       return "The link mentions a brand, but the destination is not an official domain.";
     }
 
     if (hasLookalike && hasSensitive) {
+      for (var ls = 0; ls < signals.length; ls++) {
+        if ((signals[ls].id === 'LOOKALIKE_DOMAIN_SIMILARITY' ||
+             signals[ls].id === 'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN' ||
+             signals[ls].id === 'MISLEADING_SUBDOMAIN_STRUCTURE') && signals[ls].detail) {
+          return signals[ls].detail + " The link also involves account or sensitive actions, increasing the risk of credential theft.";
+        }
+      }
       return "The destination closely resembles a known brand and requests account or sensitive actions.";
     }
 
     if (hasLookalike) {
+      for (var lk = 0; lk < signals.length; lk++) {
+        if ((signals[lk].id === 'LOOKALIKE_DOMAIN_SIMILARITY' ||
+             signals[lk].id === 'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN' ||
+             signals[lk].id === 'MISLEADING_SUBDOMAIN_STRUCTURE') && signals[lk].detail) {
+          return signals[lk].detail + " Lookalike domains are commonly used to deceive visitors into trusting an unofficial site.";
+        }
+      }
       return "The destination domain closely resembles a known brand, but is not verified as official.";
     }
 
@@ -135,7 +162,7 @@
     }
 
     if (hasPayment && hasDelivery) {
-      return "This link appears to relate to shopping, payment, or delivery details.";
+      return "This link relates to shopping, payment, or delivery context observed on the page.";
     }
     
     // Default fallback to single signal's detail if available and nothing else matched
@@ -143,7 +170,8 @@
     if (hasPayment) return "This link appears to involve a payment action.";
     if (hasReward) return "This link appears to promote a reward or offer.";
     if (hasDelivery) return "This link appears to relate to a delivery.";
-    if (hasJob) return "This link appears to relate to a job or application.";
+    if (hasJob) return "This link relates to a job application or career opportunity observed on the page.";
+    if (hasMedia) return "This link relates to media or download context. Page content and downloadable files were not inspected.";
     if (hasTracking) return "This link contains tracking information. The destination itself was not changed by this.";
     
     if (signals.length > 0 && signals[0].detail) {
@@ -153,7 +181,7 @@
     return null; 
   }
 
-  function generateActionText(signals) {
+  function generateActionText(signals, status) {
     var hasMismatch = hasSignal(signals, 'CLAIM_DESTINATION_MISMATCH');
     var hasLookalike = hasSignal(signals, 'LOOKALIKE_DOMAIN_SIMILARITY') ||
                        hasSignal(signals, 'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN') ||
@@ -165,12 +193,13 @@
     var hasJob = hasSignal(signals, 'JOB_ACTION');
     var hasThreat = hasSignal(signals, 'REPUTATION_CONFIRMED_THREAT');
     
-    var sensitiveCount = 0;
-    if (hasAccount) sensitiveCount++;
-    if (hasPayment) sensitiveCount++;
-    if (hasReward) sensitiveCount++;
-    if (hasDelivery) sensitiveCount++;
-    if (hasJob) sensitiveCount++;
+    var hasStructural = false;
+    for (var i = 0; i < signals.length; i++) {
+      if (signals[i].tier === 'B' && signals[i].id !== 'HTTP_NOT_HTTPS' && signals[i].id !== 'SUSPICIOUS_FILE_EXT') {
+        hasStructural = true;
+        break;
+      }
+    }
 
     if (hasThreat) {
       return "Do not visit this destination or provide any information.";
@@ -184,10 +213,26 @@
       return "Check the domain spelling carefully before proceeding or signing in.";
     }
 
+    // When status is INFORMATIONAL and there is NO independent risk concern,
+    // do not issue alarmist action directives for ordinary shopping, jobs, delivery, or media context.
+    if (status === 'INFORMATIONAL' && !hasStructural && !hasMismatch && !hasLookalike && !hasThreat) {
+      if (hasAccount) {
+        return "Check the destination domain before signing in.";
+      }
+      return null;
+    }
+
     if (hasPayment && hasDelivery) {
       return "Verify the destination before entering payment or delivery details.";
     }
     
+    var sensitiveCount = 0;
+    if (hasAccount) sensitiveCount++;
+    if (hasPayment) sensitiveCount++;
+    if (hasReward) sensitiveCount++;
+    if (hasDelivery) sensitiveCount++;
+    if (hasJob) sensitiveCount++;
+
     if (sensitiveCount > 1) {
       return "Pause and check the destination before entering personal or financial information.";
     }
@@ -219,20 +264,6 @@
     
     for (var i = 0; i < rawSignals.length; i++) {
       var s = rawSignals[i];
-      // Do not treat these as safety bullets unless they are part of a larger structural combo that escalated status
-      // (Wait, actually we should never show these in the Safety bullet list. They go in LINK TYPE.)
-      if (s.id === 'REDIRECTS_THROUGH_SHORTENER' || 
-          s.id === 'HAS_TRACKING_PARAMS' || 
-          s.id === 'HAS_AFFILIATE' ||
-          s.id === 'REDIRECTS_TO_DIFFERENT_DOMAIN' ||
-          s.id === 'SUSPICIOUS_FILE_EXT' || // Note: Suspicious File Ext is safety but it's low priority
-          s.id === 'HTTP_NOT_HTTPS') {
-          // Actually, if HTTP_NOT_HTTPS is present but status is INFORMATIONAL, we can show it, but the prompt says:
-          // "do not automatically feel dangerous." But let's allow it if it's tier B. 
-          // Wait! The user says: "Link-type information is different. Do not mix ordinary link metadata with safety warnings."
-          // So let's exclude purely link metadata.
-      }
-      
       if (s.id === 'REDIRECTS_THROUGH_SHORTENER' || 
           s.id === 'HAS_TRACKING_PARAMS' || 
           s.id === 'HAS_AFFILIATE' ||
@@ -256,9 +287,9 @@
       var key = sig.dimension || sig.id;
       if (!seen[key]) {
         seen[key] = true;
-        // Apply technical translation mapping
+        // Apply technical translation mapping with concrete signal details preserved
         var newSig = Object.assign({}, sig);
-        newSig.label = humanizeLabel(newSig.id, newSig.label);
+        newSig.label = humanizeLabel(newSig.id, newSig.label, newSig);
         deduped.push(newSig);
       }
     }
@@ -276,7 +307,7 @@
     var actionText = null;
     if (status !== 'NO_SIGNALS_DETECTED') {
        whyText = generateWhyText(deduped, rawSignals);
-       actionText = generateActionText(deduped);
+       actionText = generateActionText(deduped, status);
     }
     
     return {

@@ -60,6 +60,7 @@ const modulesToLoad = [
   './src/shared/domain-utils.js',
   './src/shared/lookalike-analyzer.js',
   './src/content/shortener-registry.js',
+  './src/content/context-extractor.js',
   './src/shared/deception-analyzer.js',
   './src/shared/claim-destination-analyzer.js',
   './src/shared/safety-analyzer.js',
@@ -406,5 +407,215 @@ runTest("UX-018: Brand mismatch with claimed brand and observed destination doma
   assert.ok(safetyResult.userGuidance.whyText.includes('Amazon') && safetyResult.userGuidance.whyText.includes('phishing-site.com'), 'Must name claimed brand and observed destination');
 });
 
+// 19. Unverified destination without independent risk signals (e.g. 5movierulz.green)
+runTest("UX-019: Unverified destination without independent risk signals", () => {
+  const safetyResult = BTL.safetyAnalyzer.computeSafetyEvidence(
+    'https://5movierulz.green',
+    { isShortened: false, isHttps: true },
+    { signals: [] },
+    null,
+    null,
+    { status: 'NO_REDIRECT_OBSERVED' },
+    null,
+    { status: 'REPUTATION_NOT_ENABLED' },
+    null
+  );
+
+  assert.strictEqual(safetyResult.status, 'NO_SIGNALS_DETECTED');
+  assert.strictEqual(safetyResult.localStatus, 'NO_SIGNALS_DETECTED');
+  assert.strictEqual(safetyResult.userGuidance.displaySignals.length, 0);
+  assert.strictEqual(safetyResult.userGuidance.whyText, null);
+
+  const card = getCard({
+    originalUrl: 'https://5movierulz.green',
+    networkEvidence: { status: 'NO_REDIRECT_OBSERVED' },
+    safetyEvidence: safetyResult
+  });
+  const statuses = findElementsByClass(card, 'btl-safety-status').map(s => s.textContent);
+  assert.ok(statuses.some(t => t.includes('No obvious warning signals were detected')));
+  assert.ok(statuses.some(t => t.includes('does not guarantee the site is safe')));
+});
+
+// 20. Suspicious download context without unsupported malware claims
+runTest("UX-020: Suspicious download context without unsupported malware claims", () => {
+  const contextObj = {
+    category: 'MEDIA_OR_DOWNLOAD',
+    visibleText: 'Download movie torrent now for free'
+  };
+  const safetyResult = BTL.safetyAnalyzer.computeSafetyEvidence(
+    'https://5movierulz.green/watch',
+    { isShortened: false, isHttps: true },
+    { signals: [] },
+    null,
+    null,
+    { status: 'NO_REDIRECT_OBSERVED' },
+    null,
+    { status: 'REPUTATION_NOT_ENABLED' },
+    contextObj
+  );
+
+  // Must remain INFORMATIONAL (not escalated to UNUSUAL_CHARACTERISTICS without independent technical concern)
+  assert.strictEqual(safetyResult.status, 'INFORMATIONAL');
+  assert.strictEqual(safetyResult.localStatus, 'INFORMATIONAL');
+  assert.ok(safetyResult.signals.some(s => s.id === 'DOWNLOAD_OR_MEDIA_CONTEXT'));
+  assert.strictEqual(safetyResult.userGuidance.actionText, null, 'Must not issue alarmist malware or action warning on context alone');
+  assert.ok(safetyResult.userGuidance.whyText.includes('media or download context'));
+});
+
+// 21. Download context WITH independent technical risk escalates
+runTest("UX-021: Download context with independent technical risk escalates", () => {
+  const contextObj = {
+    category: 'MEDIA_OR_DOWNLOAD',
+    visibleText: 'Download movie now'
+  };
+  const safetyResult = BTL.safetyAnalyzer.computeSafetyEvidence(
+    'http://5movierulz.green/movie.exe',
+    { isShortened: false, isHttps: false, pathname: '/movie.exe' },
+    { signals: [] },
+    null,
+    null,
+    { status: 'NO_REDIRECT_OBSERVED' },
+    null,
+    { status: 'REPUTATION_NOT_ENABLED' },
+    contextObj
+  );
+
+  // Combines SUSPICIOUS_FILE_EXT (Tier B path_content) + HTTP_NOT_HTTPS (connection) + MEDIA_OR_DOWNLOAD -> UNUSUAL_CHARACTERISTICS
+  assert.strictEqual(safetyResult.status, 'UNUSUAL_CHARACTERISTICS');
+  assert.strictEqual(safetyResult.localStatus, 'UNUSUAL_CHARACTERISTICS');
+});
+
+// 22. Genuine lookalike domains with explicit evidence
+runTest("UX-022: Genuine lookalike domains with explicit evidence", () => {
+  const safetyResult = BTL.safetyAnalyzer.computeSafetyEvidence(
+    'https://g00gle.com',
+    { isShortened: false, isHttps: true },
+    { signals: [] },
+    null,
+    null,
+    { status: 'NO_REDIRECT_OBSERVED' },
+    null,
+    { status: 'REPUTATION_NOT_ENABLED' },
+    null
+  );
+
+  assert.strictEqual(safetyResult.userGuidance.displaySignals.length, 1);
+  const label = safetyResult.userGuidance.displaySignals[0].label;
+  assert.ok(label.includes('digit substitutions'), 'Label must state the exact detection reason');
+  assert.ok(label.includes('Google'), 'Label must name the target brand');
+  assert.ok(safetyResult.userGuidance.whyText.includes('Google') && safetyResult.userGuidance.whyText.includes('Lookalike domains'));
+  assert.ok(safetyResult.userGuidance.actionText.includes('Check the domain spelling'));
+});
+
+// 23. Ordinary shopping and job links have calm informational instructions (actionText is null)
+runTest("UX-023: Ordinary shopping and job links have calm informational instructions", () => {
+  const shoppingResult = BTL.safetyAnalyzer.computeSafetyEvidence(
+    'https://amazon.com/item',
+    { isShortened: false, isHttps: true },
+    { signals: [] },
+    null,
+    null,
+    { status: 'NO_REDIRECT_OBSERVED' },
+    null,
+    { status: 'REPUTATION_NOT_ENABLED' },
+    { category: 'PAYMENT', visibleText: 'Confirm delivery and pay now' }
+  );
+  assert.strictEqual(shoppingResult.status, 'INFORMATIONAL');
+  assert.strictEqual(shoppingResult.userGuidance.actionText, null, 'Shopping context must not have alarmist action directive');
+
+  const jobResult = BTL.safetyAnalyzer.computeSafetyEvidence(
+    'https://careers.google.com',
+    { isShortened: false, isHttps: true },
+    { signals: [] },
+    null,
+    null,
+    { status: 'NO_REDIRECT_OBSERVED' },
+    null,
+    { status: 'REPUTATION_NOT_ENABLED' },
+    { category: 'JOB_HIRING', visibleText: 'Apply now for this role' }
+  );
+  assert.strictEqual(jobResult.status, 'INFORMATIONAL');
+  assert.strictEqual(jobResult.userGuidance.actionText, null, 'Job context must not have alarmist action directive');
+});
+
+// 24. Freshly resolved redirect explains routing and content disclaimer
+runTest("UX-024: Freshly resolved redirect explains routing and content disclaimer", () => {
+  const card = getCard({
+    originalUrl: 'https://youtu.be/dQw4w9WgXcQ',
+    networkEvidence: {
+      status: 'HTTP_REDIRECT_OBSERVED',
+      redirectTarget: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+    },
+    safetyEvidence: { status: 'NO_SIGNALS_DETECTED', signals: [] }
+  });
+  const evidence = findElementsByClass(card, 'btl-evidence')[0].textContent;
+  assert.ok(evidence.includes('Redirect observed: youtu.be → www.youtube.com'), 'Must name origin and target');
+  assert.ok(evidence.includes('page content and media are not inspected'), 'Must disclaim content/video safety');
+});
+
+// 25. Previously observed destination states history observation
+runTest("UX-025: Previously observed destination states history observation", () => {
+  const card = getCard({
+    originalUrl: 'https://example.com/short',
+    browserObservation: {
+      status: 'STRONG_CORRELATION',
+      observedLatestUrl: 'https://example.com/destination'
+    },
+    safetyEvidence: { status: 'NO_SIGNALS_DETECTED', signals: [] }
+  });
+  const evidence = findElementsByClass(card, 'btl-evidence')[0].textContent;
+  assert.ok(evidence.includes('Previously observed destination'));
+  assert.ok(evidence.includes('content is not inspected'));
+});
+
+// 26. Resolution failure: TIMEOUT
+runTest("UX-026: Destination resolution timeout displays timeout reason", () => {
+  const card = getCard({
+    originalUrl: 'https://slow-site.com',
+    networkEvidence: {
+      status: 'FAILED',
+      errorReason: 'TIMEOUT'
+    },
+    safetyEvidence: { status: 'NO_SIGNALS_DETECTED', signals: [] }
+  });
+  const evidence = findElementsByClass(card, 'btl-evidence')[0].textContent;
+  assert.ok(evidence.includes('Destination could not be verified (request timed out)'));
+
+  const detailValues = findElementsByClass(card, 'btl-detail-value').map(v => v.textContent);
+  assert.ok(detailValues.includes('Request timed out'));
+});
+
+// 27. Resolution failure: NETWORK_ERROR
+runTest("UX-027: Destination resolution network error displays blocked/network error", () => {
+  const card = getCard({
+    originalUrl: 'https://blocked-site.com',
+    networkEvidence: {
+      status: 'FAILED',
+      errorReason: 'NETWORK_ERROR'
+    },
+    safetyEvidence: { status: 'NO_SIGNALS_DETECTED', signals: [] }
+  });
+  const evidence = findElementsByClass(card, 'btl-evidence')[0].textContent;
+  assert.ok(evidence.includes('network error or blocked by site'));
+
+  const detailValues = findElementsByClass(card, 'btl-detail-value').map(v => v.textContent);
+  assert.ok(detailValues.includes('Network error or blocked by site'));
+});
+
+// 28. YouTube short link preserves query parameter in target destination formatting
+runTest("UX-028: Target URL formatting preserves video query parameter", () => {
+  const card = getCard({
+    originalUrl: 'https://youtu.be/dQw4w9WgXcQ',
+    networkEvidence: {
+      status: 'HTTP_REDIRECT_OBSERVED',
+      redirectTarget: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+    },
+    safetyEvidence: { status: 'NO_SIGNALS_DETECTED', signals: [] }
+  });
+  const destUrl = findElementsByClass(card, 'btl-dest-url')[0].textContent;
+  assert.ok(destUrl.includes('watch?v=dQw4w9WgXcQ'), 'Must preserve video query parameter in target formatting');
+});
+
 console.log(`\nResults: ${passed}/${total} passed`);
 if (passed !== total) process.exit(1);
+

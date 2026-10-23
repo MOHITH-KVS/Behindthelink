@@ -23,6 +23,7 @@
     { cat: 'REWARD_OFFER', regex: /\b(claim reward|special offer|winner|free gift|discount)\b/i },
     { cat: 'DELIVERY_ORDER', regex: /\b(track package|order status|delivery update|shipping)\b/i },
     { cat: 'GOVERNMENT_SERVICE', regex: /\b(tax return|medicare|government|official portal)\b/i },
+    { cat: 'MEDIA_OR_DOWNLOAD', regex: /\b(download movie|watch online|free download|stream movie|watch free|torrent download|download now)\b/i },
     { cat: 'GENERAL', regex: /\b(click here|read more|continue|learn more)\b/i }
   ];
 

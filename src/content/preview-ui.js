@@ -25,7 +25,7 @@
     currentLinkElement = linkElement;
     ensureHost();
     
-    var url = BTL.getResolvedUrl(linkElement);
+    var url = (analysisResult && analysisResult.originalUrl) ? analysisResult.originalUrl : (BTL.getResolvedUrl ? BTL.getResolvedUrl(linkElement) : '');
     var payload = {
       originalUrl: url,
       localSignals: analysisResult ? analysisResult.localSignals : {},
@@ -108,10 +108,14 @@
   function formatTargetUrl(urlStr) {
     try {
       var u = new URL(urlStr);
-      var pathname = u.pathname === '/' ? '' : u.pathname;
-      var result = u.hostname + pathname;
-      if (result.length > 40) {
-        result = result.substring(0, 37) + '...';
+      var pathname = (u.pathname === '/' && !u.search) ? '' : u.pathname;
+      var query = u.search || '';
+      if (query.length > 25) {
+        query = query.substring(0, 22) + '...';
+      }
+      var result = u.hostname + pathname + query;
+      if (result.length > 55) {
+        result = result.substring(0, 52) + '...';
       }
       return result;
     } catch(e) {
@@ -169,11 +173,17 @@
       destEvidence.className = 'btl-evidence';
     } else if (net.status === 'HTTP_REDIRECT_OBSERVED' && net.redirectTarget) {
       destUrl.textContent = formatTargetUrl(net.redirectTarget);
-      destEvidence.textContent = 'Redirect observed and final destination confirmed';
+      var origHost = getHostname(url);
+      var targetHost = getHostname(net.redirectTarget);
+      if (origHost && targetHost && origHost !== targetHost) {
+        destEvidence.textContent = 'Redirect observed: ' + origHost + ' → ' + targetHost + ' (confirms address routing; page content and media are not inspected)';
+      } else {
+        destEvidence.textContent = 'Redirect observed to destination (confirms address routing; page content and media are not inspected)';
+      }
       destEvidence.className = 'btl-evidence btl-evidence-neutral';
     } else if (obs.status === 'STRONG_CORRELATION' && obs.observedLatestUrl) {
       destUrl.textContent = formatTargetUrl(obs.observedLatestUrl);
-      destEvidence.textContent = 'Previously observed destination';
+      destEvidence.textContent = 'Previously observed destination (from browser history; content is not inspected)';
       destEvidence.className = 'btl-evidence btl-evidence-neutral';
     } else if (hasEmbedded) {
       destUrl.textContent = formatTargetUrl(locals.embeddedCandidates[0]);
@@ -182,9 +192,19 @@
     } else if (net.status === 'NO_REDIRECT_OBSERVED') {
       destUrl.textContent = domain;
       if (isShortened) {
-        destEvidence.textContent = 'Redirect not observed (destination unresolved)';
+        destEvidence.textContent = 'Redirect not observed (destination unresolved — shortener did not provide a destination)';
       } else {
-        destEvidence.textContent = 'Redirect not observed';
+        destEvidence.textContent = 'Redirect not observed (direct link; page content is not inspected)';
+      }
+      destEvidence.className = 'btl-evidence btl-evidence-neutral';
+    } else if (net.status === 'FAILED') {
+      destUrl.textContent = domain;
+      if (net.errorReason === 'TIMEOUT') {
+        destEvidence.textContent = 'Destination could not be verified (request timed out)';
+      } else if (net.errorReason === 'NETWORK_ERROR') {
+        destEvidence.textContent = 'Destination could not be verified (network error or blocked by site)';
+      } else {
+        destEvidence.textContent = 'Destination unresolved or inspection incomplete';
       }
       destEvidence.className = 'btl-evidence btl-evidence-neutral';
     } else {
@@ -374,14 +394,26 @@
     
     var cList = document.createElement('ul');
     cList.className = 'btl-bullet-list';
-    cList.appendChild(createLi('Link text and surrounding context'));
-    if (net.status === 'FAILED') {
-      cList.appendChild(createLi('! Destination could not be verified'));
+    cList.appendChild(createLi('URL structure and security characteristics'));
+    if (net.status === 'HTTP_REDIRECT_OBSERVED') {
+      cList.appendChild(createLi('Observed redirect destination routing'));
+    } else if (net.status === 'FAILED') {
+      if (net.errorReason === 'TIMEOUT') {
+        cList.appendChild(createLi('! Destination resolution timed out'));
+      } else if (net.errorReason === 'NETWORK_ERROR') {
+        cList.appendChild(createLi('! Destination connection error / blocked'));
+      } else {
+        cList.appendChild(createLi('! Destination could not be verified'));
+      }
     } else {
-      cList.appendChild(createLi('Destination'));
+      cList.appendChild(createLi('Destination reachability'));
       cList.appendChild(createLi('Redirect behavior'));
     }
-    cList.appendChild(createLi('URL characteristics'));
+    
+    if (payload.context && (payload.context.possibleClaimedBrand || (payload.context.category && payload.context.category !== 'UNKNOWN'))) {
+      cList.appendChild(createLi('Link text and surrounding page context'));
+    }
+    cList.appendChild(createLi('Brand impersonation and lookalike domain analysis'));
     checksContent.appendChild(cList);
     
     var limitsLabel = document.createElement('div');
@@ -391,9 +423,26 @@
     
     var limList = document.createElement('ul');
     limList.className = 'btl-bullet-list';
-    limList.appendChild(createLi('BehindTheLink checks the link and available redirect information before you click.'));
-    limList.appendChild(createLi('Some websites prevent automated checks or use redirects that cannot be observed.'));
-    limList.appendChild(createLi('Local checks cannot determine whether a website is completely safe.'));
+    
+    var applicableLimitations = (safety.limitations && safety.limitations.length > 0)
+      ? safety.limitations.slice()
+      : [
+          'Analysis based on URL structure and routing — page content was not inspected',
+          'Local heuristics cannot confirm whether a website or download is safe'
+        ];
+    
+    var hasContentNotice = applicableLimitations.some(function(l) {
+      return l.toLowerCase().indexOf('page content') !== -1;
+    });
+    if (!hasContentNotice) {
+      applicableLimitations.unshift('Page content, media (such as videos), sellers, and recruiters are not evaluated.');
+    } else {
+      applicableLimitations.push('Media (such as video streams), seller authenticity, and recruiter legitimacy are not evaluated.');
+    }
+    
+    applicableLimitations.forEach(function(lim) {
+      limList.appendChild(createLi(lim));
+    });
     checksContent.appendChild(limList);
     
     checksWrapper.appendChild(checksContent);
@@ -416,6 +465,10 @@
     }
     if (obs.status === 'STRONG_CORRELATION' && obs.observedLatestUrl) {
       moreContent.appendChild(createDetailRow('Observed URL', obs.observedLatestUrl));
+    }
+    if (net.status === 'FAILED' && net.errorReason) {
+      var reasonText = (net.errorReason === 'TIMEOUT') ? 'Request timed out' : 'Network error or blocked by site';
+      moreContent.appendChild(createDetailRow('Resolution Failure', reasonText));
     }
     moreWrapper.appendChild(moreContent);
     cardElement.appendChild(moreWrapper);

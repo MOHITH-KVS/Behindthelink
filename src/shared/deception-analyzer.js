@@ -109,6 +109,19 @@
       });
     }
 
+    // Media / Download Context
+    if (contextObj.category === 'MEDIA_OR_DOWNLOAD' || /\b(download movie|watch online|free download|stream movie|watch free|torrent download)\b/i.test(fullText)) {
+      signals.push({
+        id: 'DOWNLOAD_OR_MEDIA_CONTEXT',
+        tier: 'C',
+        label: 'Media or download context',
+        detail: 'This link relates to a download or media streaming action. The file or stream itself was not inspected.',
+        source: 'local_url',
+        epistemic: 'OBSERVED',
+        dimension: 'media_download_action'
+      });
+    }
+
     // Urgency / Pressure (Evaluated last to check context)
     if (PHRASES.URGENT_STRONG.test(fullText) || (hasSensitive && PHRASES.URGENT_CONTEXTUAL.test(fullText))) {
       signals.push({
