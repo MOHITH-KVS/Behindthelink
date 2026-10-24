@@ -136,14 +136,47 @@
     var title = normalize(link.getAttribute('title') || '').substring(0, MAX_TEXT_LEN);
     var nearbyText = getNearbyText(link);
 
+    var linkOwnText = normalize([visibleText, ariaLabel, title].join(' '));
+    var linkText = visibleText || ariaLabel || title || '';
+    var href = (typeof link.getAttribute === 'function' ? link.getAttribute('href') : null) || link.href || '';
+
     var fullContext = [visibleText, ariaLabel, title, nearbyText].join(' ');
-    var category = categorize(fullContext);
+
+    // Scoped category determination
+    var ownCategory = categorize(linkOwnText);
+    var fullCategory = categorize(fullContext);
+    var category = 'UNKNOWN';
+
+    var isGenericLink = !linkOwnText || /^(link|click here|read more|continue|here|details|view|more)$/i.test(linkOwnText);
+
+    if (ownCategory !== 'UNKNOWN') {
+      category = ownCategory;
+    } else if (isGenericLink) {
+      // For generic anchor text (e.g. "Link", "Click here"), inherit surrounding context
+      category = fullCategory;
+    } else {
+      // Substantive link text (e.g. product title "Sony WH-1000XM5 Wireless Headphones")
+      // Do NOT inherit PAYMENT or DELIVERY from parent card unless href/link explicitly indicates payment or delivery
+      if (fullCategory === 'PAYMENT') {
+        var isPaymentPath = /(?:^|\/)(?:checkout|pay|payment|billing|gp\/buy|buy-now)(?:[\/?#]|$)/i.test(href);
+        category = isPaymentPath ? 'PAYMENT' : 'UNKNOWN';
+      } else if (fullCategory === 'DELIVERY_ORDER') {
+        var isDeliveryPath = /(?:^|\/)(?:track|order-status|delivery|shipping)(?:[\/?#]|$)/i.test(href);
+        category = isDeliveryPath ? 'DELIVERY_ORDER' : 'UNKNOWN';
+      } else {
+        category = fullCategory;
+      }
+    }
+
     var brand = extractBrand(fullContext, category);
 
     return {
       visibleText: visibleText,
       ariaLabel: ariaLabel,
       title: title,
+      linkText: linkText,
+      linkOwnText: linkOwnText,
+      href: href,
       nearbyText: nearbyText,
       category: category,
       possibleClaimedBrand: brand,

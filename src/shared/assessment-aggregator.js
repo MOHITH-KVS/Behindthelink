@@ -89,7 +89,7 @@
     return false;
   }
 
-  function generateWhyText(signals, rawSignals) {
+  function generateWhyText(signals, rawSignals, status) {
     var hasMismatch = hasSignal(signals, 'CLAIM_DESTINATION_MISMATCH');
     var hasLookalike = hasSignal(signals, 'LOOKALIKE_DOMAIN_SIMILARITY') ||
                        hasSignal(signals, 'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN') ||
@@ -113,6 +113,10 @@
         hasStructural = true;
         break;
       }
+    }
+
+    if (status === 'INSPECTION_INCOMPLETE') {
+      return "The link destination could not be verified. Exercise caution when following unconfirmed links.";
     }
 
     if (hasThreat) {
@@ -190,6 +194,10 @@
   }
 
   function generateActionText(signals, status) {
+    if (status === 'INSPECTION_INCOMPLETE') {
+      return "Verify the destination before entering credentials or sensitive information.";
+    }
+
     var hasMismatch = hasSignal(signals, 'CLAIM_DESTINATION_MISMATCH');
     var hasLookalike = hasSignal(signals, 'LOOKALIKE_DOMAIN_SIMILARITY') ||
                        hasSignal(signals, 'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN') ||
@@ -223,9 +231,9 @@
       return "Check the domain spelling carefully before proceeding or signing in.";
     }
 
-    // When status is INFORMATIONAL and there is NO independent risk concern,
+    // When status is INFORMATIONAL or CONTEXTUAL_CAUTION and there is NO independent risk concern,
     // do not issue alarmist action directives for ordinary shopping, jobs, delivery, or general media context.
-    if (status === 'INFORMATIONAL' && !hasStructural && !hasMismatch && !hasLookalike && !hasThreat) {
+    if ((status === 'INFORMATIONAL' || status === 'CONTEXTUAL_CAUTION') && !hasStructural && !hasMismatch && !hasLookalike && !hasThreat) {
       if (hasUnofficial || hasApk) {
         return "Avoid installing APKs or executable files from untrusted sources.";
       }
@@ -291,8 +299,8 @@
       safetySignals.push(s);
     }
     
-    // If status is NO_SIGNALS_DETECTED, we shouldn't show safety bullets that didn't escalate
-    if (status === 'NO_SIGNALS_DETECTED') {
+    // If status is NO_KNOWN_THREAT or NO_SIGNALS_DETECTED, we shouldn't show safety bullets that didn't escalate
+    if (status === 'NO_SIGNALS_DETECTED' || status === 'NO_KNOWN_THREAT') {
       safetySignals = [];
     }
     
@@ -322,8 +330,8 @@
     // 5. Generate Explanations
     var whyText = null;
     var actionText = null;
-    if (status !== 'NO_SIGNALS_DETECTED') {
-       whyText = generateWhyText(deduped, rawSignals);
+    if (status !== 'NO_SIGNALS_DETECTED' && status !== 'NO_KNOWN_THREAT') {
+       whyText = generateWhyText(deduped, rawSignals, status);
        actionText = generateActionText(deduped, status);
     }
     

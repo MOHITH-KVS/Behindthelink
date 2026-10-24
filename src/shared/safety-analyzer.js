@@ -432,12 +432,14 @@
     // --- STEP 4: Determine assessmentBasis ---
     var networkAvailable = (networkEvidence && networkEvidence.status !== 'FAILED');
     var observationExists = (browserObservation && browserObservation.status === 'STRONG_CORRELATION');
-    var shortenerNoResolve = (localSignals && localSignals.isShortened && 
-                              (!networkEvidence || networkEvidence.status === 'FAILED') && 
-                              (!browserObservation || browserObservation.status === 'NONE'));
+    var isShortener = localSignals && localSignals.isShortened;
+    var shortenerNoResolve = isShortener && 
+                              ((!networkEvidence || networkEvidence.status === 'FAILED') ||
+                               (networkEvidence && (networkEvidence.errorReason === 'DESTINATION_UNRESOLVED' || networkEvidence.errorReason === 'BLOCKED_INTERSTITIAL'))) && 
+                              (!browserObservation || browserObservation.status === 'NONE');
     
     var assessmentBasis;
-    if (shortenerNoResolve) {
+    if (shortenerNoResolve || (networkEvidence && (networkEvidence.errorReason === 'DESTINATION_UNRESOLVED' || networkEvidence.errorReason === 'BLOCKED_INTERSTITIAL'))) {
       assessmentBasis = 'INCOMPLETE';
       limitations.push("Destination is hidden behind a shortener and could not be confirmed");
     } else if (networkAvailable && observationExists) {
@@ -494,7 +496,7 @@
     }
 
     // --- STEP 4.3: Evaluate Deception/Pressure Signals ---
-    if (contextObj && BTL.deceptionAnalyzer) {
+    if (BTL.deceptionAnalyzer) {
       var deceptionSignals = BTL.deceptionAnalyzer.analyzeDeception(contextObj, verifiedDestination || originalUrl);
       tierC = tierC.concat(deceptionSignals);
     }
@@ -522,7 +524,7 @@
       }
     }
 
-    // --- STEP 5: Determine status from Tier B/C signals ---
+    // --- STEP 5: Determine status and explicit inspection verdict from Tier B/C signals ---
     var technicalDimensions = {};
     tierB.forEach(function (s) {
       if (s.dimension) technicalDimensions[s.dimension] = true;
@@ -573,17 +575,47 @@
       }
     }
 
-    if (tierB.length === 0 && tierC.length === 0) {
-      localStatus = (tierA.length > 0) ? 'INFORMATIONAL' : 'NO_SIGNALS_DETECTED';
-    } else if (hasMismatch) {
+    var isInspectionIncomplete = (assessmentBasis === 'INCOMPLETE') ||
+      (networkEvidence && (networkEvidence.errorReason === 'DESTINATION_UNRESOLVED' || networkEvidence.errorReason === 'BLOCKED_INTERSTITIAL' || networkEvidence.errorReason === 'REDIRECT_LOOP' || networkEvidence.errorReason === 'MALFORMED_DESTINATION'));
+
+    var hasMediaContext = tierC.some(function (s) {
+      return s.dimension === 'media_download_action';
+    });
+
+    if (hasMismatch) {
       localStatus = 'UNUSUAL_CHARACTERISTICS';
     } else if (hasIndependentConcern && totalDimensions >= 2) {
       localStatus = 'UNUSUAL_CHARACTERISTICS';
+    } else if (isInspectionIncomplete) {
+      localStatus = 'INSPECTION_INCOMPLETE';
+    } else if (hasMediaContext) {
+      localStatus = 'CONTEXTUAL_CAUTION';
+    } else if (tierB.length === 0 && tierC.length === 0 && tierA.length === 0) {
+      localStatus = 'NO_SIGNALS_DETECTED';
+    } else if (tierB.length === 0 && tierC.length === 0) {
+      localStatus = 'INFORMATIONAL';
     } else {
       localStatus = 'INFORMATIONAL';
     }
 
-    var status = (reputationStatus === 'KNOWN_THREAT') ? 'STRONG_WARNING' : localStatus;
+    // 5 Explicit Mutually Exclusive Verdicts
+    var verdict;
+    if (reputationStatus === 'KNOWN_THREAT') {
+      verdict = 'KNOWN_THREAT';
+    } else if (localStatus === 'UNUSUAL_CHARACTERISTICS' || (hasIndependentConcern && totalDimensions >= 2)) {
+      verdict = 'UNUSUAL_CHARACTERISTICS';
+    } else if (localStatus === 'INSPECTION_INCOMPLETE') {
+      verdict = 'INSPECTION_INCOMPLETE';
+    } else if (localStatus === 'CONTEXTUAL_CAUTION') {
+      verdict = 'CONTEXTUAL_CAUTION';
+    } else if (hasIndependentConcern) {
+      // Standalone lookalike or single structural Tier B without sensitive action
+      verdict = 'UNUSUAL_CHARACTERISTICS';
+    } else {
+      verdict = 'NO_KNOWN_THREAT';
+    }
+
+    var status = (reputationStatus === 'KNOWN_THREAT') ? 'STRONG_WARNING' : ((localStatus === 'CONTEXTUAL_CAUTION' || localStatus === 'INSPECTION_INCOMPLETE') ? localStatus : (localStatus === 'NO_SIGNALS_DETECTED' ? 'NO_SIGNALS_DETECTED' : localStatus));
 
     // --- STEP 6: Assemble and return ---
     var allSignals = []
@@ -596,12 +628,13 @@
 
     var userGuidance = null;
     if (BTL.assessmentAggregator) {
-       userGuidance = BTL.assessmentAggregator.aggregate(allSignals, localStatus);
+       userGuidance = BTL.assessmentAggregator.aggregate(allSignals, verdict);
     }
 
     return {
       status: status,
       localStatus: localStatus,
+      verdict: verdict,
       reputationStatus: reputationStatus,
       signals: allSignals,
       userGuidance: userGuidance,

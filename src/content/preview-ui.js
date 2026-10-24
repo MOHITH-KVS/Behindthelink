@@ -203,6 +203,14 @@
         destEvidence.textContent = 'Destination could not be verified (request timed out)';
       } else if (net.errorReason === 'NETWORK_ERROR') {
         destEvidence.textContent = 'Destination could not be verified (network error or blocked by site)';
+      } else if (net.errorReason === 'BLOCKED_INTERSTITIAL') {
+        destEvidence.textContent = 'Destination could not be verified (interstitial challenge or blocked by site)';
+      } else if (net.errorReason === 'DESTINATION_UNRESOLVED') {
+        destEvidence.textContent = 'Destination unresolved (shortener did not provide a destination)';
+      } else if (net.errorReason === 'REDIRECT_LOOP') {
+        destEvidence.textContent = 'Destination could not be verified (redirect loop detected)';
+      } else if (net.errorReason === 'MALFORMED_DESTINATION') {
+        destEvidence.textContent = 'Destination could not be verified (malformed or unsafe destination scheme)';
       } else {
         destEvidence.textContent = 'Destination unresolved or inspection incomplete';
       }
@@ -276,34 +284,42 @@
     var sIcon = document.createElement('span');
     var sText = document.createElement('span');
     
-    var localStatus = safety.localStatus || safety.status;
+    var verdict = safety.verdict || safety.status || safety.localStatus;
     
-    switch (localStatus) {
-      case 'NO_SIGNALS_DETECTED':
-        sIcon.textContent = '—'; sIcon.style.color = '#9ca3af';
-        sText.textContent = 'No obvious warning signals were detected in the information inspected. This does not guarantee the site is safe.'; sText.style.color = '#6b7280';
-        break;
-      case 'INFORMATIONAL':
-        sIcon.textContent = 'ℹ'; sIcon.style.color = '#64748b';
-        sText.textContent = 'Some things to know'; sText.style.color = '#64748b';
+    switch (verdict) {
+      case 'KNOWN_THREAT':
+      case 'STRONG_WARNING':
+        sIcon.textContent = '🚨'; sIcon.style.color = '#dc2626';
+        sText.textContent = 'Known threat reported'; sText.style.color = '#dc2626';
         break;
       case 'UNUSUAL_CHARACTERISTICS':
         sIcon.textContent = '⚠'; sIcon.style.color = '#d97706';
         sText.textContent = 'Some unusual characteristics'; sText.style.color = '#d97706';
         break;
-      case 'STRONG_WARNING':
-        sIcon.textContent = '🚨'; sIcon.style.color = '#dc2626';
-        sText.textContent = 'Known threat reported'; sText.style.color = '#dc2626';
+      case 'CONTEXTUAL_CAUTION':
+        sIcon.textContent = '⚠'; sIcon.style.color = '#d97706';
+        sText.textContent = 'Contextual caution'; sText.style.color = '#d97706';
+        break;
+      case 'INSPECTION_INCOMPLETE':
+        sIcon.textContent = '—'; sIcon.style.color = '#d97706';
+        sText.textContent = 'Inspection incomplete — destination could not be verified'; sText.style.color = '#d97706';
+        break;
+      case 'INFORMATIONAL':
+        sIcon.textContent = 'ℹ'; sIcon.style.color = '#64748b';
+        sText.textContent = 'Some things to know'; sText.style.color = '#64748b';
+        break;
+      case 'NO_KNOWN_THREAT':
+      case 'NO_SIGNALS_DETECTED':
+      default:
+        sIcon.textContent = '—'; sIcon.style.color = '#9ca3af';
+        sText.textContent = 'No obvious warning signals were detected in the information inspected. This does not guarantee the site is safe.'; sText.style.color = '#6b7280';
         break;
     }
     localStatusEl.appendChild(sIcon);
     localStatusEl.appendChild(sText);
     
-    // Only append localStatus if we don't have a KNOWN_THREAT overriding everything, 
-    // or if we want to show it alongside. The spec says:
-    // "An unusual local result must not be overridden by a clean reputation result."
-    // "KNOWN_THREAT always supersedes all other UI states"
-    if (safety.reputationStatus !== 'KNOWN_THREAT') {
+    // Only append localStatus if we don't have a KNOWN_THREAT overriding everything
+    if (safety.reputationStatus !== 'KNOWN_THREAT' && verdict !== 'KNOWN_THREAT' && verdict !== 'STRONG_WARNING') {
       safetyBlock.appendChild(localStatusEl);
     }
 
@@ -402,6 +418,14 @@
         cList.appendChild(createLi('! Destination resolution timed out'));
       } else if (net.errorReason === 'NETWORK_ERROR') {
         cList.appendChild(createLi('! Destination connection error / blocked'));
+      } else if (net.errorReason === 'BLOCKED_INTERSTITIAL') {
+        cList.appendChild(createLi('! Destination blocked by interstitial challenge'));
+      } else if (net.errorReason === 'DESTINATION_UNRESOLVED') {
+        cList.appendChild(createLi('! Destination could not be resolved from shortener'));
+      } else if (net.errorReason === 'REDIRECT_LOOP') {
+        cList.appendChild(createLi('! Redirect loop detected'));
+      } else if (net.errorReason === 'MALFORMED_DESTINATION') {
+        cList.appendChild(createLi('! Destination URL is unsafe or invalid'));
       } else {
         cList.appendChild(createLi('! Destination could not be verified'));
       }

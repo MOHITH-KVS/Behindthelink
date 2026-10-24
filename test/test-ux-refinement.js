@@ -407,8 +407,8 @@ runTest("UX-018: Brand mismatch with claimed brand and observed destination doma
   assert.ok(safetyResult.userGuidance.whyText.includes('Amazon') && safetyResult.userGuidance.whyText.includes('phishing-site.com'), 'Must name claimed brand and observed destination');
 });
 
-// 19. Unverified destination without independent risk signals (e.g. 5movierulz.green)
-runTest("UX-019: Unverified destination without independent risk signals", () => {
+// 19. Unverified destination with joined domain media intent (5movierulz.green)
+runTest("UX-019: Unverified destination with joined domain media intent (5movierulz.green)", () => {
   const safetyResult = BTL.safetyAnalyzer.computeSafetyEvidence(
     'https://5movierulz.green',
     { isShortened: false, isHttps: true },
@@ -421,10 +421,10 @@ runTest("UX-019: Unverified destination without independent risk signals", () =>
     null
   );
 
-  assert.strictEqual(safetyResult.status, 'NO_SIGNALS_DETECTED');
-  assert.strictEqual(safetyResult.localStatus, 'NO_SIGNALS_DETECTED');
-  assert.strictEqual(safetyResult.userGuidance.displaySignals.length, 0);
-  assert.strictEqual(safetyResult.userGuidance.whyText, null);
+  assert.strictEqual(safetyResult.status, 'CONTEXTUAL_CAUTION');
+  assert.strictEqual(safetyResult.verdict, 'CONTEXTUAL_CAUTION');
+  assert.ok(safetyResult.signals.some(s => s.id === 'UNOFFICIAL_STREAMING_OR_DOWNLOAD_CONTEXT'));
+  assert.ok(safetyResult.userGuidance.whyText.includes('movie-download') || safetyResult.userGuidance.whyText.includes('streaming'));
 
   const card = getCard({
     originalUrl: 'https://5movierulz.green',
@@ -432,8 +432,7 @@ runTest("UX-019: Unverified destination without independent risk signals", () =>
     safetyEvidence: safetyResult
   });
   const statuses = findElementsByClass(card, 'btl-safety-status').map(s => s.textContent);
-  assert.ok(statuses.some(t => t.includes('No obvious warning signals were detected')));
-  assert.ok(statuses.some(t => t.includes('does not guarantee the site is safe')));
+  assert.ok(statuses.some(t => t.includes('Contextual caution')));
 });
 
 // 20. Suspicious download context without unsupported malware claims
@@ -454,9 +453,9 @@ runTest("UX-020: Suspicious download context without unsupported malware claims"
     contextObj
   );
 
-  // Must remain INFORMATIONAL (not escalated to UNUSUAL_CHARACTERISTICS without independent technical concern)
-  assert.strictEqual(safetyResult.status, 'INFORMATIONAL');
-  assert.strictEqual(safetyResult.localStatus, 'INFORMATIONAL');
+  // Must be CONTEXTUAL_CAUTION (not escalated to UNUSUAL_CHARACTERISTICS without independent technical concern)
+  assert.strictEqual(safetyResult.status, 'CONTEXTUAL_CAUTION');
+  assert.strictEqual(safetyResult.verdict, 'CONTEXTUAL_CAUTION');
   assert.ok(safetyResult.signals.some(s => s.id === 'UNOFFICIAL_STREAMING_OR_DOWNLOAD_CONTEXT' || s.id === 'DOWNLOAD_OR_MEDIA_CONTEXT'));
   assert.strictEqual(safetyResult.userGuidance.actionText, 'Avoid installing APKs or executable files from untrusted sources.');
   assert.ok(safetyResult.userGuidance.whyText.includes('movie-download') || safetyResult.userGuidance.whyText.includes('media or download'));
@@ -643,7 +642,8 @@ runTest("UX-029: Movie-download link with explicit surrounding context", () => {
     extracted
   );
 
-  assert.strictEqual(safetyResult.status, 'INFORMATIONAL');
+  assert.strictEqual(safetyResult.status, 'CONTEXTUAL_CAUTION');
+  assert.strictEqual(safetyResult.verdict, 'CONTEXTUAL_CAUTION');
   assert.ok(safetyResult.signals.some(s => s.id === 'UNOFFICIAL_STREAMING_OR_DOWNLOAD_CONTEXT'));
   assert.strictEqual(safetyResult.userGuidance.actionText, 'Avoid installing APKs or executable files from untrusted sources.');
   assert.ok(safetyResult.userGuidance.whyText.includes('movie-download or unofficial streaming page'));
@@ -671,7 +671,8 @@ runTest("UX-030: Movie-download phrase in the anchor text alone", () => {
     extracted
   );
 
-  assert.strictEqual(safetyResult.status, 'INFORMATIONAL');
+  assert.strictEqual(safetyResult.status, 'CONTEXTUAL_CAUTION');
+  assert.strictEqual(safetyResult.verdict, 'CONTEXTUAL_CAUTION');
   assert.ok(safetyResult.signals.some(s => s.id === 'UNOFFICIAL_STREAMING_OR_DOWNLOAD_CONTEXT'));
   assert.strictEqual(safetyResult.userGuidance.displaySignals[0].label, 'Movie-download or unofficial streaming context');
 });
@@ -702,7 +703,8 @@ runTest("UX-031: Movie-download phrase in a relevant nearby description alone", 
     extracted
   );
 
-  assert.strictEqual(safetyResult.status, 'INFORMATIONAL');
+  assert.strictEqual(safetyResult.status, 'CONTEXTUAL_CAUTION');
+  assert.strictEqual(safetyResult.verdict, 'CONTEXTUAL_CAUTION');
   assert.ok(safetyResult.signals.some(s => s.id === 'UNOFFICIAL_STREAMING_OR_DOWNLOAD_CONTEXT'));
 });
 
@@ -972,7 +974,7 @@ runTest("UX-041: Correct user-facing warning, explanation, and action text in pr
   assert.ok(header.includes('5movierulz.green'));
 
   const statuses = findElementsByClass(card, 'btl-safety-status').map(s => s.textContent);
-  assert.ok(statuses.some(s => s.includes('Some things to know')));
+  assert.ok(statuses.some(s => s.includes('Contextual caution')));
 
   const bullets = findElementsByClass(card, 'btl-bullet-list')[0].textContent;
   assert.ok(bullets.includes('Movie-download or unofficial streaming context'));
@@ -1022,7 +1024,8 @@ runTest("UX-042: Context-only detection must not falsely claim malware or phishi
   assert.strictEqual(statusAndGuidanceText.includes('malware'), false, 'Must not claim malware on context alone');
   assert.strictEqual(statusAndGuidanceText.includes('phishing'), false, 'Must not claim phishing on context alone');
   assert.strictEqual(statusAndGuidanceText.includes('malicious'), false, 'Must not claim malicious on context alone');
-  assert.strictEqual(safetyResult.status, 'INFORMATIONAL');
+  assert.strictEqual(safetyResult.status, 'CONTEXTUAL_CAUTION');
+  assert.strictEqual(safetyResult.verdict, 'CONTEXTUAL_CAUTION');
 });
 
 console.log(`\nResults: ${passed}/${total} passed`);
