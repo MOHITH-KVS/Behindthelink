@@ -32,7 +32,10 @@
     'UNUSUAL_PORT':      'connection',
     'HTTP_NOT_HTTPS':    'connection',
     'HEAVY_ENCODING':    'encoding',
-    'SUSPICIOUS_FILE_EXT': 'path_content'
+    'SUSPICIOUS_FILE_EXT': 'path_content',
+    'LOOKALIKE_DOMAIN_SIMILARITY':        'brand_identity',
+    'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN': 'brand_identity',
+    'MISLEADING_SUBDOMAIN_STRUCTURE':     'brand_identity'
   };
 
   function getLabel(signalType, urlContext) {
@@ -65,6 +68,12 @@
         return 'Contains tracking parameters';
       case 'HAS_AFFILIATE':
         return 'Contains affiliate/referral parameter';
+      case 'LOOKALIKE_DOMAIN_SIMILARITY':
+        return isTarget ? 'Destination closely resembles a known brand' : 'Domain closely resembles a known brand';
+      case 'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN':
+        return isTarget ? 'Destination embeds a brand name in an unrelated domain' : 'Embeds a brand name in an unrelated domain';
+      case 'MISLEADING_SUBDOMAIN_STRUCTURE':
+        return isTarget ? 'Destination uses a brand name in a misleading subdomain' : 'Uses a brand name in a misleading subdomain';
       case 'SENSITIVE_ACTION_PATH':
       case 'CONTEXT_LOGIN':
         return 'URL appears related to login';
@@ -115,6 +124,10 @@
         return 'The link contains recognized tracking query parameters' + (extra ? ' (' + extra + ')' : '') + '.';
       case 'HAS_AFFILIATE':
         return 'The link contains a recognized affiliate or referral parameter.';
+      case 'LOOKALIKE_DOMAIN_SIMILARITY':
+      case 'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN':
+      case 'MISLEADING_SUBDOMAIN_STRUCTURE':
+        return extra || 'The destination domain closely resembles a known brand name but is not verified as official.';
       case 'SENSITIVE_ACTION_PATH':
       case 'CONTEXT_LOGIN':
       case 'CONTEXT_PAYMENT':
@@ -156,8 +169,12 @@
     }
   }
 
-  // Basic e2LD comparison. Does not handle complex public suffixes perfectly but handles typical cases.
+  // Domain comparison: delegates to BTL.domainUtils with PSL awareness, falling back if not loaded
   function differentRegistrableDomain(url1, url2) {
+    if (BTL.domainUtils && typeof BTL.domainUtils.differentRegistrableDomain === 'function') {
+      return BTL.domainUtils.differentRegistrableDomain(url1, url2);
+    }
+
     var host1 = getHostname(url1);
     var host2 = getHostname(url2);
     if (!host1 || !host2) return false;
@@ -175,7 +192,7 @@
     var parts1 = host1.split('.');
     var parts2 = host2.split('.');
     
-    // Very naive, fallback logic
+    // Fallback logic
     var e2ld1 = parts1.slice(-2).join('.');
     var e2ld2 = parts2.slice(-2).join('.');
     
@@ -415,12 +432,14 @@
     // --- STEP 4: Determine assessmentBasis ---
     var networkAvailable = (networkEvidence && networkEvidence.status !== 'FAILED');
     var observationExists = (browserObservation && browserObservation.status === 'STRONG_CORRELATION');
-    var shortenerNoResolve = (localSignals && localSignals.isShortened && 
-                              (!networkEvidence || networkEvidence.status === 'FAILED') && 
-                              (!browserObservation || browserObservation.status === 'NONE'));
+    var isShortener = localSignals && localSignals.isShortened;
+    var shortenerNoResolve = isShortener && 
+                              ((!networkEvidence || networkEvidence.status === 'FAILED') ||
+                               (networkEvidence && (networkEvidence.errorReason === 'DESTINATION_UNRESOLVED' || networkEvidence.errorReason === 'BLOCKED_INTERSTITIAL'))) && 
+                              (!browserObservation || browserObservation.status === 'NONE');
     
     var assessmentBasis;
-    if (shortenerNoResolve) {
+    if (shortenerNoResolve || (networkEvidence && (networkEvidence.errorReason === 'DESTINATION_UNRESOLVED' || networkEvidence.errorReason === 'BLOCKED_INTERSTITIAL'))) {
       assessmentBasis = 'INCOMPLETE';
       limitations.push("Destination is hidden behind a shortener and could not be confirmed");
     } else if (networkAvailable && observationExists) {
@@ -441,14 +460,23 @@
     }
 
     // --- STEP 4.2: Evaluate Claim ↔ Destination Mismatch ---
-    var verifiedDestination = null;
-    var mismatchSource = null;
-    if (networkEvidence && networkEvidence.status === 'HTTP_REDIRECT_OBSERVED' && networkEvidence.redirectTarget) {
-      verifiedDestination = networkEvidence.redirectTarget;
-      mismatchSource = 'network';
-    } else if (browserObservation && browserObservation.status === 'STRONG_CORRELATION' && browserObservation.observedLatestUrl) {
-      verifiedDestination = browserObservation.observedLatestUrl;
-      mismatchSource = 'browser_observation';
+    var destEvidence = (BTL.claimDestinationAnalyzer && typeof BTL.claimDestinationAnalyzer.getVerifiedDestination === 'function')
+      ? BTL.claimDestinationAnalyzer.getVerifiedDestination(networkEvidence, browserObservation, originalUrl)
+      : null;
+    var verifiedDestination = destEvidence ? destEvidence.url : null;
+    var mismatchSource = destEvidence ? destEvidence.source : null;
+
+    if (!destEvidence) {
+      if (networkEvidence && networkEvidence.status === 'HTTP_REDIRECT_OBSERVED' && networkEvidence.redirectTarget) {
+        verifiedDestination = networkEvidence.redirectTarget;
+        mismatchSource = 'network';
+      } else if (networkEvidence && networkEvidence.status === 'NO_REDIRECT_OBSERVED') {
+        verifiedDestination = originalUrl;
+        mismatchSource = 'network';
+      } else if (browserObservation && browserObservation.status === 'STRONG_CORRELATION' && browserObservation.observedLatestUrl) {
+        verifiedDestination = browserObservation.observedLatestUrl;
+        mismatchSource = 'browser_observation';
+      }
     }
 
     if (verifiedDestination && contextObj && BTL.claimDestinationAnalyzer) {
@@ -458,7 +486,7 @@
           id: 'CLAIM_DESTINATION_MISMATCH',
           tier: 'C',
           dimension: 'claim_destination',
-          urlContext: 'network_target_url',
+          urlContext: (verifiedDestination === originalUrl) ? 'original_url' : 'network_target_url',
           source: mismatchSource,
           epistemic: 'VERIFIED',
           label: "Link and destination don't match",
@@ -468,24 +496,59 @@
     }
 
     // --- STEP 4.3: Evaluate Deception/Pressure Signals ---
-    if (contextObj && BTL.deceptionAnalyzer) {
-      var deceptionSignals = BTL.deceptionAnalyzer.analyzeDeception(contextObj);
+    if (BTL.deceptionAnalyzer) {
+      var deceptionSignals = BTL.deceptionAnalyzer.analyzeDeception(contextObj, verifiedDestination || originalUrl);
       tierC = tierC.concat(deceptionSignals);
     }
 
-    // --- STEP 5: Determine status from Tier B/C signals ---
-    var activeDimensions = {};
+    // --- STEP 4.4: Evaluate Lookalike Domain Signals ---
+    if (verifiedDestination && assessmentBasis !== 'INCOMPLETE' && BTL.lookalikeAnalyzer) {
+      var lookalike = BTL.lookalikeAnalyzer.detectLookalike(verifiedDestination, contextObj);
+      if (lookalike) {
+        tierC.push({
+          id: lookalike.signalId,
+          tier: 'C',
+          dimension: 'brand_identity',
+          urlContext: (verifiedDestination === originalUrl) ? 'original_url' : 'network_target_url',
+          source: mismatchSource || 'destination_url',
+          epistemic: 'HEURISTIC',
+          label: getLabel(lookalike.signalId, (verifiedDestination === originalUrl) ? 'original_url' : 'network_target_url'),
+          detail: lookalike.detail,
+          metadata: {
+            brandId: lookalike.brandId,
+            brandName: lookalike.brandName,
+            detectionType: lookalike.detectionType,
+            detectedDomain: lookalike.detectedDomain
+          }
+        });
+      }
+    }
+
+    // --- STEP 5: Determine status and explicit inspection verdict from Tier B/C signals ---
+    var technicalDimensions = {};
     tierB.forEach(function (s) {
-      if (s.dimension) activeDimensions[s.dimension] = true;
+      if (s.dimension) technicalDimensions[s.dimension] = true;
     });
+
+    var brandDimensions = {};
     var hasMismatch = false;
+    var contextDimensions = {};
+
     tierC.forEach(function (s) {
-      if (s.dimension) activeDimensions[s.dimension] = true;
-      if (s.id === 'CLAIM_DESTINATION_MISMATCH') hasMismatch = true;
+      if (s.id === 'CLAIM_DESTINATION_MISMATCH') {
+        hasMismatch = true;
+        brandDimensions[s.dimension || 'claim_destination'] = true;
+      } else if (s.dimension === 'brand_identity') {
+        brandDimensions['brand_identity'] = true;
+      } else if (s.dimension) {
+        contextDimensions[s.dimension] = true;
+      }
     });
-    var dimensionCount = Object.keys(activeDimensions).length;
+
+    var hasIndependentConcern = (Object.keys(technicalDimensions).length > 0) || (Object.keys(brandDimensions).length > 0);
+    var totalDimensions = Object.keys(technicalDimensions).length + Object.keys(brandDimensions).length + Object.keys(contextDimensions).length;
     var localStatus;
-    var reputationStatus = 'NO_REPUTATION_VERDICT';
+    var reputationStatus = 'REPUTATION_NOT_ENABLED';
     
     // --- STEP 4.5: Check Reputation (Tier D) ---
     if (reputationSignals) {
@@ -505,18 +568,54 @@
         reputationStatus = 'NO_KNOWN_THREAT';
       } else if (reputationSignals.status === 'REPUTATION_UNAVAILABLE') {
         reputationStatus = 'REPUTATION_UNAVAILABLE';
+      } else if (reputationSignals.status === 'REPUTATION_NOT_ENABLED') {
+        reputationStatus = 'REPUTATION_NOT_ENABLED';
+      } else if (reputationSignals.status === 'REPUTATION_PENDING') {
+        reputationStatus = 'REPUTATION_PENDING';
       }
     }
 
-    if (tierB.length === 0 && tierC.length === 0) {
-      localStatus = (tierA.length > 0) ? 'INFORMATIONAL' : 'NO_SIGNALS_DETECTED';
-    } else if (dimensionCount >= 2 || hasMismatch) {
+    var isInspectionIncomplete = (assessmentBasis === 'INCOMPLETE') ||
+      (networkEvidence && (networkEvidence.errorReason === 'DESTINATION_UNRESOLVED' || networkEvidence.errorReason === 'BLOCKED_INTERSTITIAL' || networkEvidence.errorReason === 'REDIRECT_LOOP' || networkEvidence.errorReason === 'MALFORMED_DESTINATION'));
+
+    var hasMediaContext = tierC.some(function (s) {
+      return s.dimension === 'media_download_action';
+    });
+
+    if (hasMismatch) {
       localStatus = 'UNUSUAL_CHARACTERISTICS';
+    } else if (hasIndependentConcern && totalDimensions >= 2) {
+      localStatus = 'UNUSUAL_CHARACTERISTICS';
+    } else if (isInspectionIncomplete) {
+      localStatus = 'INSPECTION_INCOMPLETE';
+    } else if (hasMediaContext) {
+      localStatus = 'CONTEXTUAL_CAUTION';
+    } else if (tierB.length === 0 && tierC.length === 0 && tierA.length === 0) {
+      localStatus = 'NO_SIGNALS_DETECTED';
+    } else if (tierB.length === 0 && tierC.length === 0) {
+      localStatus = 'INFORMATIONAL';
     } else {
       localStatus = 'INFORMATIONAL';
     }
 
-    var status = (reputationStatus === 'KNOWN_THREAT') ? 'STRONG_WARNING' : localStatus;
+    // 5 Explicit Mutually Exclusive Verdicts
+    var verdict;
+    if (reputationStatus === 'KNOWN_THREAT') {
+      verdict = 'KNOWN_THREAT';
+    } else if (localStatus === 'UNUSUAL_CHARACTERISTICS' || (hasIndependentConcern && totalDimensions >= 2)) {
+      verdict = 'UNUSUAL_CHARACTERISTICS';
+    } else if (localStatus === 'INSPECTION_INCOMPLETE') {
+      verdict = 'INSPECTION_INCOMPLETE';
+    } else if (localStatus === 'CONTEXTUAL_CAUTION') {
+      verdict = 'CONTEXTUAL_CAUTION';
+    } else if (hasIndependentConcern) {
+      // Standalone lookalike or single structural Tier B without sensitive action
+      verdict = 'UNUSUAL_CHARACTERISTICS';
+    } else {
+      verdict = 'NO_KNOWN_THREAT';
+    }
+
+    var status = (reputationStatus === 'KNOWN_THREAT') ? 'STRONG_WARNING' : ((localStatus === 'CONTEXTUAL_CAUTION' || localStatus === 'INSPECTION_INCOMPLETE') ? localStatus : (localStatus === 'NO_SIGNALS_DETECTED' ? 'NO_SIGNALS_DETECTED' : localStatus));
 
     // --- STEP 6: Assemble and return ---
     var allSignals = []
@@ -529,12 +628,13 @@
 
     var userGuidance = null;
     if (BTL.assessmentAggregator) {
-       userGuidance = BTL.assessmentAggregator.aggregate(allSignals, localStatus);
+       userGuidance = BTL.assessmentAggregator.aggregate(allSignals, verdict);
     }
 
     return {
       status: status,
       localStatus: localStatus,
+      verdict: verdict,
       reputationStatus: reputationStatus,
       signals: allSignals,
       userGuidance: userGuidance,

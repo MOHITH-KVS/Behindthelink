@@ -9,7 +9,10 @@ const tests = [
   'test/test-context-extractor.js',
   'test/test-claim-destination.js',
   'test/test-deception-analyzer.js',
-  'test/test-combined-assessment.js'
+  'test/test-combined-assessment.js',
+  'test/test-domain-utils.js',
+  'test/test-lookalike-analyzer.js',
+  'test/test-stage1-overhaul.js'
 ];
 
 let allPassed = true;

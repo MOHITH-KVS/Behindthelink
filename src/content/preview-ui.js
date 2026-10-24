@@ -7,7 +7,7 @@
   'use strict';
 
   var BTL = window.BehindTheLink;
-  var BTL_RUNTIME_MARKER = "Phase1H4-runtime-20260912-A";
+  var BTL_RUNTIME_MARKER = "v1.1.1-context-aware-20261024";
   console.log('[BehindTheLink] Runtime renderer:', BTL_RUNTIME_MARKER);
   console.log('[BehindTheLink] Source file: src/content/preview-ui.js');
 
@@ -25,7 +25,7 @@
     currentLinkElement = linkElement;
     ensureHost();
     
-    var url = BTL.getResolvedUrl(linkElement);
+    var url = (analysisResult && analysisResult.originalUrl) ? analysisResult.originalUrl : (BTL.getResolvedUrl ? BTL.getResolvedUrl(linkElement) : '');
     var payload = {
       originalUrl: url,
       localSignals: analysisResult ? analysisResult.localSignals : {},
@@ -65,11 +65,11 @@
 
   function setReputationLoading() {
     if (!lastPayload || !cardElement || !shouldBeVisible) return;
-    if (lastPayload.safetyEvidence) {
+    if (lastPayload.safetyEvidence && lastPayload.safetyEvidence.reputationStatus !== 'REPUTATION_NOT_ENABLED') {
       lastPayload.safetyEvidence.reputationStatus = 'REPUTATION_PENDING';
+      render(lastPayload, false);
+      positionCard(currentLinkElement);
     }
-    render(lastPayload, false);
-    positionCard(currentLinkElement);
   }
 
   function updateReputationResult(repResponse) {
@@ -108,10 +108,14 @@
   function formatTargetUrl(urlStr) {
     try {
       var u = new URL(urlStr);
-      var pathname = u.pathname === '/' ? '' : u.pathname;
-      var result = u.hostname + pathname;
-      if (result.length > 40) {
-        result = result.substring(0, 37) + '...';
+      var pathname = (u.pathname === '/' && !u.search) ? '' : u.pathname;
+      var query = u.search || '';
+      if (query.length > 25) {
+        query = query.substring(0, 22) + '...';
+      }
+      var result = u.hostname + pathname + query;
+      if (result.length > 55) {
+        result = result.substring(0, 52) + '...';
       }
       return result;
     } catch(e) {
@@ -161,30 +165,59 @@
     var destUrl = document.createElement('div');
     destUrl.className = 'btl-dest-url';
     var destEvidence = document.createElement('div');
-    
+    var isShortened = locals.isShortened || (BTL.shortenerRegistry && BTL.shortenerRegistry.isShortener(domain));
+
     if (isLoading) {
       destUrl.textContent = 'Checking destination…';
       destUrl.style.color = '#6b7280';
       destEvidence.className = 'btl-evidence';
     } else if (net.status === 'HTTP_REDIRECT_OBSERVED' && net.redirectTarget) {
       destUrl.textContent = formatTargetUrl(net.redirectTarget);
-      destEvidence.textContent = '✓ Redirect destination confirmed';
-      destEvidence.className = 'btl-evidence btl-evidence-neutral';
-    } else if (net.status === 'NO_REDIRECT_OBSERVED') {
-      destUrl.textContent = domain;
-      destEvidence.textContent = '✓ Destination verified';
+      var origHost = getHostname(url);
+      var targetHost = getHostname(net.redirectTarget);
+      if (origHost && targetHost && origHost !== targetHost) {
+        destEvidence.textContent = 'Redirect observed: ' + origHost + ' → ' + targetHost + ' (confirms address routing; page content and media are not inspected)';
+      } else {
+        destEvidence.textContent = 'Redirect observed to destination (confirms address routing; page content and media are not inspected)';
+      }
       destEvidence.className = 'btl-evidence btl-evidence-neutral';
     } else if (obs.status === 'STRONG_CORRELATION' && obs.observedLatestUrl) {
       destUrl.textContent = formatTargetUrl(obs.observedLatestUrl);
-      destEvidence.textContent = 'Previously observed destination';
+      destEvidence.textContent = 'Previously observed destination (from browser history; content is not inspected)';
       destEvidence.className = 'btl-evidence btl-evidence-neutral';
     } else if (hasEmbedded) {
       destUrl.textContent = formatTargetUrl(locals.embeddedCandidates[0]);
       destEvidence.textContent = 'Likely destination';
       destEvidence.className = 'btl-evidence btl-evidence-neutral';
+    } else if (net.status === 'NO_REDIRECT_OBSERVED') {
+      destUrl.textContent = domain;
+      if (isShortened) {
+        destEvidence.textContent = 'Redirect not observed (destination unresolved — shortener did not provide a destination)';
+      } else {
+        destEvidence.textContent = 'Redirect not observed (direct link; page content is not inspected)';
+      }
+      destEvidence.className = 'btl-evidence btl-evidence-neutral';
+    } else if (net.status === 'FAILED') {
+      destUrl.textContent = domain;
+      if (net.errorReason === 'TIMEOUT') {
+        destEvidence.textContent = 'Destination could not be verified (request timed out)';
+      } else if (net.errorReason === 'NETWORK_ERROR') {
+        destEvidence.textContent = 'Destination could not be verified (network error or blocked by site)';
+      } else if (net.errorReason === 'BLOCKED_INTERSTITIAL') {
+        destEvidence.textContent = 'Destination could not be verified (interstitial challenge or blocked by site)';
+      } else if (net.errorReason === 'DESTINATION_UNRESOLVED') {
+        destEvidence.textContent = 'Destination unresolved (shortener did not provide a destination)';
+      } else if (net.errorReason === 'REDIRECT_LOOP') {
+        destEvidence.textContent = 'Destination could not be verified (redirect loop detected)';
+      } else if (net.errorReason === 'MALFORMED_DESTINATION') {
+        destEvidence.textContent = 'Destination could not be verified (malformed or unsafe destination scheme)';
+      } else {
+        destEvidence.textContent = 'Destination unresolved or inspection incomplete';
+      }
+      destEvidence.className = 'btl-evidence btl-evidence-neutral';
     } else {
       destUrl.textContent = domain;
-      destEvidence.textContent = 'Could not verify destination';
+      destEvidence.textContent = 'Destination unresolved or inspection incomplete';
       destEvidence.className = 'btl-evidence btl-evidence-neutral';
     }
     
@@ -210,7 +243,7 @@
     safetyLabel.textContent = 'SAFETY';
     safetyBlock.appendChild(safetyLabel);
     
-    if (safety.reputationStatus && safety.reputationStatus !== 'REPUTATION_NOT_ENABLED') {
+    if (safety.reputationStatus) {
       var repStatusEl = document.createElement('div');
       repStatusEl.className = 'btl-safety-status';
       var repIcon = document.createElement('span');
@@ -228,6 +261,10 @@
         case 'REPUTATION_PENDING':
           repIcon.textContent = '⟳'; repIcon.style.color = '#6b7280';
           repText.textContent = 'Checking reputation…'; repText.style.color = '#6b7280';
+          break;
+        case 'REPUTATION_NOT_ENABLED':
+          repIcon.textContent = '—'; repIcon.style.color = '#9ca3af';
+          repText.textContent = 'External reputation checking is not enabled.'; repText.style.color = '#6b7280';
           break;
         case 'REPUTATION_UNAVAILABLE':
         case 'NO_REPUTATION_VERDICT':
@@ -247,34 +284,42 @@
     var sIcon = document.createElement('span');
     var sText = document.createElement('span');
     
-    var localStatus = safety.localStatus || safety.status;
+    var verdict = safety.verdict || safety.status || safety.localStatus;
     
-    switch (localStatus) {
-      case 'NO_SIGNALS_DETECTED':
-        sIcon.textContent = '—'; sIcon.style.color = '#9ca3af';
-        sText.textContent = 'No obvious warning signs were found in the link or surrounding context.'; sText.style.color = '#6b7280';
-        break;
-      case 'INFORMATIONAL':
-        sIcon.textContent = 'ℹ'; sIcon.style.color = '#64748b';
-        sText.textContent = 'Some things to know'; sText.style.color = '#64748b';
+    switch (verdict) {
+      case 'KNOWN_THREAT':
+      case 'STRONG_WARNING':
+        sIcon.textContent = '🚨'; sIcon.style.color = '#dc2626';
+        sText.textContent = 'Known threat reported'; sText.style.color = '#dc2626';
         break;
       case 'UNUSUAL_CHARACTERISTICS':
         sIcon.textContent = '⚠'; sIcon.style.color = '#d97706';
         sText.textContent = 'Some unusual characteristics'; sText.style.color = '#d97706';
         break;
-      case 'STRONG_WARNING':
-        sIcon.textContent = '🚨'; sIcon.style.color = '#dc2626';
-        sText.textContent = 'Known threat reported'; sText.style.color = '#dc2626';
+      case 'CONTEXTUAL_CAUTION':
+        sIcon.textContent = '⚠'; sIcon.style.color = '#d97706';
+        sText.textContent = 'Contextual caution'; sText.style.color = '#d97706';
+        break;
+      case 'INSPECTION_INCOMPLETE':
+        sIcon.textContent = '—'; sIcon.style.color = '#d97706';
+        sText.textContent = 'Inspection incomplete — destination could not be verified'; sText.style.color = '#d97706';
+        break;
+      case 'INFORMATIONAL':
+        sIcon.textContent = 'ℹ'; sIcon.style.color = '#64748b';
+        sText.textContent = 'Some things to know'; sText.style.color = '#64748b';
+        break;
+      case 'NO_KNOWN_THREAT':
+      case 'NO_SIGNALS_DETECTED':
+      default:
+        sIcon.textContent = '—'; sIcon.style.color = '#9ca3af';
+        sText.textContent = 'No obvious warning signals were detected in the information inspected. This does not guarantee the site is safe.'; sText.style.color = '#6b7280';
         break;
     }
     localStatusEl.appendChild(sIcon);
     localStatusEl.appendChild(sText);
     
-    // Only append localStatus if we don't have a KNOWN_THREAT overriding everything, 
-    // or if we want to show it alongside. The spec says:
-    // "An unusual local result must not be overridden by a clean reputation result."
-    // "KNOWN_THREAT always supersedes all other UI states"
-    if (safety.reputationStatus !== 'KNOWN_THREAT') {
+    // Only append localStatus if we don't have a KNOWN_THREAT overriding everything
+    if (safety.reputationStatus !== 'KNOWN_THREAT' && verdict !== 'KNOWN_THREAT' && verdict !== 'STRONG_WARNING') {
       safetyBlock.appendChild(localStatusEl);
     }
 
@@ -365,14 +410,34 @@
     
     var cList = document.createElement('ul');
     cList.className = 'btl-bullet-list';
-    cList.appendChild(createLi('Link text and surrounding context'));
-    if (net.status === 'FAILED') {
-      cList.appendChild(createLi('! Destination could not be verified'));
+    cList.appendChild(createLi('URL structure and security characteristics'));
+    if (net.status === 'HTTP_REDIRECT_OBSERVED') {
+      cList.appendChild(createLi('Observed redirect destination routing'));
+    } else if (net.status === 'FAILED') {
+      if (net.errorReason === 'TIMEOUT') {
+        cList.appendChild(createLi('! Destination resolution timed out'));
+      } else if (net.errorReason === 'NETWORK_ERROR') {
+        cList.appendChild(createLi('! Destination connection error / blocked'));
+      } else if (net.errorReason === 'BLOCKED_INTERSTITIAL') {
+        cList.appendChild(createLi('! Destination blocked by interstitial challenge'));
+      } else if (net.errorReason === 'DESTINATION_UNRESOLVED') {
+        cList.appendChild(createLi('! Destination could not be resolved from shortener'));
+      } else if (net.errorReason === 'REDIRECT_LOOP') {
+        cList.appendChild(createLi('! Redirect loop detected'));
+      } else if (net.errorReason === 'MALFORMED_DESTINATION') {
+        cList.appendChild(createLi('! Destination URL is unsafe or invalid'));
+      } else {
+        cList.appendChild(createLi('! Destination could not be verified'));
+      }
     } else {
-      cList.appendChild(createLi('Destination'));
+      cList.appendChild(createLi('Destination reachability'));
       cList.appendChild(createLi('Redirect behavior'));
     }
-    cList.appendChild(createLi('URL characteristics'));
+    
+    if (payload.context && (payload.context.possibleClaimedBrand || (payload.context.category && payload.context.category !== 'UNKNOWN'))) {
+      cList.appendChild(createLi('Link text and surrounding page context'));
+    }
+    cList.appendChild(createLi('Brand impersonation and lookalike domain analysis'));
     checksContent.appendChild(cList);
     
     var limitsLabel = document.createElement('div');
@@ -382,9 +447,26 @@
     
     var limList = document.createElement('ul');
     limList.className = 'btl-bullet-list';
-    limList.appendChild(createLi('BehindTheLink checks the link and available redirect information before you click.'));
-    limList.appendChild(createLi('Some websites prevent automated checks or use redirects that cannot be observed.'));
-    limList.appendChild(createLi('Local checks cannot determine whether a website is completely safe.'));
+    
+    var applicableLimitations = (safety.limitations && safety.limitations.length > 0)
+      ? safety.limitations.slice()
+      : [
+          'Analysis based on URL structure and routing — page content was not inspected',
+          'Local heuristics cannot confirm whether a website or download is safe'
+        ];
+    
+    var hasContentNotice = applicableLimitations.some(function(l) {
+      return l.toLowerCase().indexOf('page content') !== -1;
+    });
+    if (!hasContentNotice) {
+      applicableLimitations.unshift('Page content, media (such as videos), sellers, and recruiters are not evaluated.');
+    } else {
+      applicableLimitations.push('Media (such as video streams), seller authenticity, and recruiter legitimacy are not evaluated.');
+    }
+    
+    applicableLimitations.forEach(function(lim) {
+      limList.appendChild(createLi(lim));
+    });
     checksContent.appendChild(limList);
     
     checksWrapper.appendChild(checksContent);
@@ -407,6 +489,10 @@
     }
     if (obs.status === 'STRONG_CORRELATION' && obs.observedLatestUrl) {
       moreContent.appendChild(createDetailRow('Observed URL', obs.observedLatestUrl));
+    }
+    if (net.status === 'FAILED' && net.errorReason) {
+      var reasonText = (net.errorReason === 'TIMEOUT') ? 'Request timed out' : 'Network error or blocked by site';
+      moreContent.appendChild(createDetailRow('Resolution Failure', reasonText));
     }
     moreWrapper.appendChild(moreContent);
     cardElement.appendChild(moreWrapper);

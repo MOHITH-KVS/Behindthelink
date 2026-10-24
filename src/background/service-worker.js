@@ -8,6 +8,9 @@
 
 importScripts(
   '../shared/constants.js',
+  '../shared/brand-registry.js',
+  '../shared/domain-utils.js',
+  '../shared/lookalike-analyzer.js',
   '../content/tracking-registry.js',
   '../content/shortener-registry.js',
   '../content/affiliate-registry.js',
@@ -64,6 +67,78 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+const MAX_BYTES = 4096;
+
+function isValidHttpUrl(urlString) {
+  if (!urlString || typeof urlString !== 'string') return false;
+  try {
+    const parsed = new URL(urlString);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch (e) {
+    return false;
+  }
+}
+
+function extractMetaRefreshTarget(htmlText, baseUrl) {
+  if (!htmlText || typeof htmlText !== 'string') return null;
+  const match = htmlText.match(/<meta[^>]*?http-equiv\s*=\s*["']?refresh["']?[^>]*?content\s*=\s*["']?\s*\d*\s*;\s*url=([^"'>\s]+)/i) ||
+                htmlText.match(/<meta[^>]*?content\s*=\s*["']?\s*\d*\s*;\s*url=([^"'>\s]+)[^>]*?http-equiv\s*=\s*["']?refresh["']?/i);
+  if (!match || !match[1]) return null;
+  const rawTarget = match[1].trim().replace(/^['"]|['"]$/g, '');
+  try {
+    const resolved = new URL(rawTarget, baseUrl).href;
+    return resolved;
+  } catch (e) {
+    return rawTarget;
+  }
+}
+
+function isBlockedOrInterstitial(status, bodyText) {
+  if (status === 403 || status === 429 || status === 503) return true;
+  if (!bodyText) return false;
+  const lower = bodyText.toLowerCase();
+  return lower.includes('cf-browser-verification') ||
+         lower.includes('challenge-platform') ||
+         lower.includes('turnstile') ||
+         lower.includes('just a moment...') ||
+         lower.includes('attention required! | cloudflare') ||
+         lower.includes('ddos-guard') ||
+         lower.includes('security check to continue');
+}
+
+async function readBoundedBody(response, maxBytes) {
+  try {
+    if (!response.body) {
+      if (typeof response.text === 'function') {
+        const text = await response.text();
+        return text ? text.substring(0, maxBytes) : '';
+      }
+      return '';
+    }
+    if (typeof response.body.getReader === 'function') {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let result = '';
+      let bytesRead = 0;
+      while (bytesRead < maxBytes) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        bytesRead += value.byteLength;
+        result += decoder.decode(value, { stream: true });
+        if (bytesRead >= maxBytes) {
+          reader.cancel();
+          break;
+        }
+      }
+      return result;
+    }
+    const fullText = await response.text();
+    return fullText ? fullText.substring(0, maxBytes) : '';
+  } catch (e) {
+    return '';
+  }
+}
+
 function normalizeUrl(urlString) {
   try {
     const obj = new URL(urlString);
@@ -92,47 +167,159 @@ async function resolveDestination(originalUrlString, requestId, contextObj) {
     severity: 'NONE', signals: []
   };
 
+  const isShortener = localSignals.isShortened || (BTL.shortenerRegistry && BTL.shortenerRegistry.isShortener(localSignals.hostname));
+
   let networkEvidence = {
     status: 'FAILED',
     redirectTarget: null,
     errorReason: 'UNCONFIRMED'
   };
 
-  try {
-    const normalizedOriginal = normalizeUrl(originalUrlString);
-    
-    const response = await fetch(originalUrlString, {
-      method: 'GET',
-      redirect: 'follow',
-      signal: controller.signal
-    });
+  if (!isValidHttpUrl(originalUrlString)) {
+    networkEvidence.status = 'FAILED';
+    networkEvidence.errorReason = 'MALFORMED_DESTINATION';
+    clearTimeout(timeoutId);
+    activeRequests.delete(requestId);
+  } else {
+    try {
+      let currentUrl = originalUrlString;
+      const visitedUrls = new Set();
+      let hops = 0;
+      let resolvedTarget = null;
+      let isTerminated = false;
 
-    const normalizedResponse = normalizeUrl(response.url);
+      while (hops < MAX_HOPS && !isTerminated) {
+        hops++;
+        const normCurrent = normalizeUrl(currentUrl);
+        if (visitedUrls.has(normCurrent)) {
+          networkEvidence.status = 'FAILED';
+          networkEvidence.errorReason = 'REDIRECT_LOOP';
+          isTerminated = true;
+          break;
+        }
+        visitedUrls.add(normCurrent);
 
-    if (normalizedResponse !== normalizedOriginal) {
-      networkEvidence.status = 'HTTP_REDIRECT_OBSERVED';
-      networkEvidence.redirectTarget = response.url;
-      networkEvidence.errorReason = null;
-    } else {
-      networkEvidence.status = 'NO_REDIRECT_OBSERVED';
-      networkEvidence.redirectTarget = null;
-      networkEvidence.errorReason = null;
+        // Attempt HEAD first
+        let headRes = null;
+        let headFailed = false;
+        try {
+          headRes = await fetch(currentUrl, {
+            method: 'HEAD',
+            redirect: 'follow',
+            signal: controller.signal
+          });
+          if (headRes.status === 405 || headRes.status === 501 || headRes.status === 403) {
+            headFailed = true;
+          }
+        } catch (e) {
+          headFailed = true;
+        }
+
+        // If HEAD succeeded and followed a redirect to a different destination
+        if (!headFailed && headRes && headRes.url && normalizeUrl(headRes.url) !== normCurrent) {
+          if (!isValidHttpUrl(headRes.url)) {
+            networkEvidence.status = 'FAILED';
+            networkEvidence.errorReason = 'MALFORMED_DESTINATION';
+            isTerminated = true;
+            break;
+          }
+          resolvedTarget = headRes.url;
+          currentUrl = headRes.url;
+          const nextAnalysis = BTL.urlAnalyzer ? BTL.urlAnalyzer.analyzeUrl(currentUrl) : null;
+          const nextIsShortener = nextAnalysis && nextAnalysis.localSignals && nextAnalysis.localSignals.isShortened;
+          if (!nextIsShortener) {
+            isTerminated = true;
+            break;
+          }
+          continue;
+        }
+
+        // Fall back to bounded GET (if HEAD failed or produced no redirect on shortener/page)
+        let getRes = null;
+        try {
+          getRes = await fetch(currentUrl, {
+            method: 'GET',
+            redirect: 'follow',
+            signal: controller.signal
+          });
+        } catch (e) {
+          throw e;
+        }
+
+        const normGetUrl = normalizeUrl(getRes.url);
+        if (normGetUrl !== normCurrent) {
+          if (!isValidHttpUrl(getRes.url)) {
+            networkEvidence.status = 'FAILED';
+            networkEvidence.errorReason = 'MALFORMED_DESTINATION';
+            isTerminated = true;
+            break;
+          }
+          resolvedTarget = getRes.url;
+          currentUrl = getRes.url;
+        }
+
+        // Read strictly bounded response body (up to 4KB)
+        const bodyChunk = await readBoundedBody(getRes, MAX_BYTES);
+
+        // Detect blocked or interstitial challenge pages
+        if (isBlockedOrInterstitial(getRes.status, bodyChunk)) {
+          networkEvidence.status = 'FAILED';
+          networkEvidence.errorReason = 'BLOCKED_INTERSTITIAL';
+          isTerminated = true;
+          break;
+        }
+
+        // Parse meta-refresh redirect (without executing JavaScript)
+        const metaTarget = extractMetaRefreshTarget(bodyChunk, getRes.url);
+        if (metaTarget) {
+          if (!isValidHttpUrl(metaTarget)) {
+            networkEvidence.status = 'FAILED';
+            networkEvidence.errorReason = 'MALFORMED_DESTINATION';
+            isTerminated = true;
+            break;
+          }
+          if (normalizeUrl(metaTarget) !== normCurrent) {
+            resolvedTarget = metaTarget;
+            currentUrl = metaTarget;
+            continue;
+          }
+        }
+
+        isTerminated = true;
+      }
+
+      if (hops >= MAX_HOPS && !resolvedTarget && !networkEvidence.errorReason) {
+        networkEvidence.status = 'FAILED';
+        networkEvidence.errorReason = 'REDIRECT_LOOP';
+      }
+
+      if (!networkEvidence.errorReason) {
+        if (resolvedTarget && normalizeUrl(resolvedTarget) !== normalizeUrl(originalUrlString)) {
+          networkEvidence.status = 'HTTP_REDIRECT_OBSERVED';
+          networkEvidence.redirectTarget = resolvedTarget;
+          networkEvidence.errorReason = null;
+        } else if (isShortener) {
+          // Never report a shortener as safe merely because its destination could not be resolved
+          networkEvidence.status = 'FAILED';
+          networkEvidence.redirectTarget = null;
+          networkEvidence.errorReason = 'DESTINATION_UNRESOLVED';
+        } else {
+          networkEvidence.status = 'NO_REDIRECT_OBSERVED';
+          networkEvidence.redirectTarget = null;
+          networkEvidence.errorReason = null;
+        }
+      }
+    } catch (error) {
+      if (error === 'timeout' || (error && error.name === 'AbortError') || (error && error.message && error.message.includes('timeout'))) {
+        networkEvidence.errorReason = 'TIMEOUT';
+      } else {
+        networkEvidence.errorReason = 'NETWORK_ERROR';
+      }
     }
-  } catch (error) {
-    if (error === 'timeout' || error.name === 'AbortError' || (error.message && error.message.includes('timeout'))) {
-      networkEvidence.errorReason = 'TIMEOUT';
-    } else {
-      networkEvidence.errorReason = 'NETWORK_ERROR';
-    }
-    
-    if (networkEvidence.errorReason === 'TIMEOUT' && (!error || error.name !== 'AbortError')) {
-      // Actually handled above, but if it was truly aborted by something else, we could use CANCELLED
-      // For now keep it TIMEOUT/NETWORK_ERROR
-    }
+
+    clearTimeout(timeoutId);
+    activeRequests.delete(requestId);
   }
-
-  clearTimeout(timeoutId);
-  activeRequests.delete(requestId);
 
   let browserObservation = {
     status: 'NONE',
@@ -176,7 +363,7 @@ async function resolveDestination(originalUrlString, requestId, contextObj) {
     }
   }
 
-  let reputationSignals = { status: 'REPUTATION_PENDING' };
+  let reputationSignals = { status: 'REPUTATION_NOT_ENABLED' };
   
   const safetyEvidence = BTL.safetyAnalyzer ? BTL.safetyAnalyzer.computeSafetyEvidence(
     originalUrlString,

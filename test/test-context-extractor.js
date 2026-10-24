@@ -36,6 +36,8 @@ const sandbox = {
 };
 
 vm.createContext(sandbox);
+const registryCode = fs.readFileSync('./src/shared/brand-registry.js', 'utf8');
+vm.runInContext(registryCode, sandbox);
 const extractorCode = fs.readFileSync('./src/content/context-extractor.js', 'utf8');
 vm.runInContext(extractorCode, sandbox);
 
@@ -145,5 +147,68 @@ runTest("EXT-010: Unknown category fallback", () => {
   assert.strictEqual(result.category, 'UNKNOWN');
 });
 
+runTest("EXT-011: State Bank of India alias extraction", () => {
+  const link = createMockElement('a');
+  link.textContent = 'State Bank of India login portal';
+  const result = extractor.extract(link);
+  assert.strictEqual(result.possibleClaimedBrand, 'SBI');
+  assert.strictEqual(result.category, 'LOGIN_ACCOUNT');
+});
+
+runTest("EXT-012: HDFC Bank alias extraction", () => {
+  const link = createMockElement('a');
+  link.textContent = 'HDFC Bank netbanking login';
+  const result = extractor.extract(link);
+  assert.strictEqual(result.possibleClaimedBrand, 'HDFC');
+  assert.strictEqual(result.category, 'LOGIN_ACCOUNT');
+});
+
+runTest("EXT-013: WhatsApp alias extraction", () => {
+  const link = createMockElement('a');
+  link.textContent = 'Chat on WhatsApp with customer support';
+  const result = extractor.extract(link);
+  assert.strictEqual(result.possibleClaimedBrand, 'WHATSAPP');
+});
+
+runTest("EXT-014: Watch movies online free phrasing category extraction", () => {
+  const link = createMockElement('a');
+  link.textContent = '5movierulz - Watch Telugu, Tamil, Hindi Movies Online Free';
+  const result = extractor.extract(link);
+  assert.strictEqual(result.category, 'MEDIA_OR_DOWNLOAD');
+});
+
+runTest("EXT-015: Download full movies HD category extraction", () => {
+  const link = createMockElement('a');
+  link.textContent = '5MovieRulz - Download Bollywood, Hollywood Full Movies HD';
+  const result = extractor.extract(link);
+  assert.strictEqual(result.category, 'MEDIA_OR_DOWNLOAD');
+});
+
+runTest("EXT-016: Google search DOM tree depth traversal to snippet", () => {
+  const cardDiv = createMockElement('div'); // Depth 5
+  const colDiv = createMockElement('div');  // Depth 4
+  const titleContainer = createMockElement('div'); // Depth 3
+  const yuRUbfDiv = createMockElement('div'); // Depth 2
+  const wrapperDiv = createMockElement('div'); // Depth 1
+  const link = createMockElement('a');
+  link.textContent = '5movierulz';
+  
+  cardDiv.appendChild(colDiv);
+  colDiv.appendChild(titleContainer);
+  titleContainer.appendChild(yuRUbfDiv);
+  yuRUbfDiv.appendChild(wrapperDiv);
+  wrapperDiv.appendChild(link);
+  
+  // Snippet at Depth 4
+  const snippetDiv = createMockElement('div');
+  snippetDiv.textContent = '5movierulz is a pirated torrent website to download Telugu, Tamil, Malayalam, Hindi movies online free in HD';
+  colDiv.appendChild(snippetDiv);
+
+  const result = extractor.extract(link);
+  assert.strictEqual(result.category, 'MEDIA_OR_DOWNLOAD');
+  assert.ok(result.nearbyText.includes('pirated torrent website'));
+});
+
 console.log(`\nResults: ${passed}/${total} passed`);
 if (passed !== total) process.exit(1);
+

@@ -164,6 +164,11 @@
           isResolved = true;
           BTL.previewUI.updateNetworkResult(response, analysisResult);
 
+          // External reputation checks are disabled in this release
+          if (response.safetyEvidence && response.safetyEvidence.reputationStatus === 'REPUTATION_NOT_ENABLED') {
+            return;
+          }
+
           // PHASE 4B.2: Reputation Delay
           // Schedule reputation check only if the user remains interested
           var REPUTATION_DELAY_MS = 600;
