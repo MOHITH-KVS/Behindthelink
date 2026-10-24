@@ -495,7 +495,7 @@
 
     // --- STEP 4.3: Evaluate Deception/Pressure Signals ---
     if (contextObj && BTL.deceptionAnalyzer) {
-      var deceptionSignals = BTL.deceptionAnalyzer.analyzeDeception(contextObj);
+      var deceptionSignals = BTL.deceptionAnalyzer.analyzeDeception(contextObj, verifiedDestination || originalUrl);
       tierC = tierC.concat(deceptionSignals);
     }
 

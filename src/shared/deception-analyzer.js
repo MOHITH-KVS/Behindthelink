@@ -23,12 +23,44 @@
     JOB: /\b(job offer|interview|application|salary|career opportunity|selected for interview|complete application)\b/i
   };
 
+  var MEDIA_PHRASES = {
+    APP_OR_APK: /(?:\bdownload\s+apk\b|\binstall\s+apk\b|\bapk\s+download\b|\binstall\s+(?:this\s+)?app(?:lication)?\s+to\s+watch\b)/i,
+    UNOFFICIAL_STREAMING: /(?:\b(?:torrent|torrents|magnet|pirat(?:ed|e|y)|leaks?|leaked)\b|\bfree\s+(?:full\s+)?movies?\s+download\b|\bdownload\s+(?:[\w\s,–\-|]{0,35}\b)?(?:movies?|films?)\s+(?:free|hd)\b|\b(?:movies?|films?)\s+free\s+download\b|\bdownload\s+movie\s+torrent\b|\btorrent\s+download\b|\bwatch\s+(?:[\w\s,–\-|]{0,35}\b)?movies?\s+online\s+free\b|\bwatch\s+free\s+movies?\b|\bfree\s+movies?\s+online\b)/i,
+    GENERAL_MEDIA: /(?:\b(?:download|torrent|stream)\b[\w\s,–\-|]{0,35}\b(?:movies?|films?|episodes?|series|cinema)\b|\b(?:movies?|films?|episodes?|series|cinema)\b[\w\s,–\-|]{0,35}\b(?:download|torrent)\b|\b(?:watch|stream)\b[\w\s,–\-|]{0,35}\b(?:movies?|films?|cinema|episodes?|shows?)\b[\w\s,–\-|]{0,35}\b(?:online|free)\b|\b(?:download\s+movies?|watch\s+movies?\s+online|stream\s+movies?|download\s+movie)\b)/i
+  };
+
+  var MAINSTREAM_STREAMING_DOMAINS = [
+    'youtube.com', 'youtu.be', 'netflix.com', 'primevideo.com', 'amazon.com',
+    'hulu.com', 'disneyplus.com', 'apple.com', 'max.com', 'hbomax.com',
+    'paramountplus.com', 'peacocktv.com', 'imdb.com', 'rottentomatoes.com', 'wikipedia.org'
+  ];
+
+  function isMainstreamStreaming(destUrl, contextObj) {
+    if (contextObj && contextObj.possibleClaimedBrand) {
+      var claimed = (contextObj.possibleClaimedBrand || '').toUpperCase();
+      if (claimed === 'YOUTUBE' || claimed === 'NETFLIX' || claimed === 'AMAZON' || claimed === 'APPLE') {
+        return true;
+      }
+    }
+    if (!destUrl) return false;
+    try {
+      var host = new URL(destUrl).hostname.toLowerCase();
+      for (var i = 0; i < MAINSTREAM_STREAMING_DOMAINS.length; i++) {
+        var d = MAINSTREAM_STREAMING_DOMAINS[i];
+        if (host === d || host.endsWith('.' + d)) {
+          return true;
+        }
+      }
+    } catch (e) {}
+    return false;
+  }
+
   function normalize(str) {
     if (!str) return '';
     return str.toLowerCase().replace(/\s+/g, ' ').trim();
   }
 
-  function analyzeDeception(contextObj) {
+  function analyzeDeception(contextObj, destinationUrl) {
     if (!contextObj) return [];
     
     // Combine all textual context limits to search
@@ -110,16 +142,38 @@
     }
 
     // Media / Download Context
-    if (contextObj.category === 'MEDIA_OR_DOWNLOAD' || /\b(download movie|watch online|free download|stream movie|watch free|torrent download)\b/i.test(fullText)) {
-      signals.push({
-        id: 'DOWNLOAD_OR_MEDIA_CONTEXT',
-        tier: 'C',
-        label: 'Media or download context',
-        detail: 'This link relates to a download or media streaming action. The file or stream itself was not inspected.',
-        source: 'local_url',
-        epistemic: 'OBSERVED',
-        dimension: 'media_download_action'
-      });
+    if (!isMainstreamStreaming(destinationUrl, contextObj)) {
+      if (MEDIA_PHRASES.APP_OR_APK.test(fullText)) {
+        signals.push({
+          id: 'APP_OR_APK_DOWNLOAD_CONTEXT',
+          tier: 'C',
+          label: 'App or APK download context',
+          detail: 'This link suggests downloading an application or APK to stream or watch content.',
+          source: 'local_url',
+          epistemic: 'OBSERVED',
+          dimension: 'media_download_action'
+        });
+      } else if (MEDIA_PHRASES.UNOFFICIAL_STREAMING.test(fullText)) {
+        signals.push({
+          id: 'UNOFFICIAL_STREAMING_OR_DOWNLOAD_CONTEXT',
+          tier: 'C',
+          label: 'Movie-download or unofficial streaming context',
+          detail: 'This link appears to lead to a movie-download or unofficial streaming page.',
+          source: 'local_url',
+          epistemic: 'OBSERVED',
+          dimension: 'media_download_action'
+        });
+      } else if (contextObj.category === 'MEDIA_OR_DOWNLOAD' || MEDIA_PHRASES.GENERAL_MEDIA.test(fullText)) {
+        signals.push({
+          id: 'DOWNLOAD_OR_MEDIA_CONTEXT',
+          tier: 'C',
+          label: 'Movie-download context detected',
+          detail: 'This link relates to a movie-download or media streaming action. Page content and downloadable files were not inspected.',
+          source: 'local_url',
+          epistemic: 'OBSERVED',
+          dimension: 'media_download_action'
+        });
+      }
     }
 
     // Urgency / Pressure (Evaluated last to check context)

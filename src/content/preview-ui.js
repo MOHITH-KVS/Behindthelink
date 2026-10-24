@@ -7,7 +7,7 @@
   'use strict';
 
   var BTL = window.BehindTheLink;
-  var BTL_RUNTIME_MARKER = "Phase1H4-runtime-20260912-A";
+  var BTL_RUNTIME_MARKER = "v1.1.1-context-aware-20261024";
   console.log('[BehindTheLink] Runtime renderer:', BTL_RUNTIME_MARKER);
   console.log('[BehindTheLink] Source file: src/content/preview-ui.js');
 

@@ -13,7 +13,7 @@
 
   var MAX_TEXT_LEN = 200;
   var MAX_NEARBY_LEN = 500;
-  var MAX_TRAVERSAL_DEPTH = 3;
+  var MAX_TRAVERSAL_DEPTH = 6;
 
   var CATEGORY_RULES = [
     { cat: 'JOB_HIRING', regex: /\b(apply now|job description|careers|hiring|job opening)\b/i },
@@ -23,7 +23,7 @@
     { cat: 'REWARD_OFFER', regex: /\b(claim reward|special offer|winner|free gift|discount)\b/i },
     { cat: 'DELIVERY_ORDER', regex: /\b(track package|order status|delivery update|shipping)\b/i },
     { cat: 'GOVERNMENT_SERVICE', regex: /\b(tax return|medicare|government|official portal)\b/i },
-    { cat: 'MEDIA_OR_DOWNLOAD', regex: /\b(download movie|watch online|free download|stream movie|watch free|torrent download|download now)\b/i },
+    { cat: 'MEDIA_OR_DOWNLOAD', regex: /(?:\b(?:download|torrent|stream)\b[\w\s,–\-|]{0,35}\b(?:movies?|films?|episodes?|series|cinema|apk)\b|\b(?:movies?|films?|episodes?|series|cinema)\b[\w\s,–\-|]{0,35}\b(?:download|torrent)\b|\b(?:watch|stream)\b[\w\s,–\-|]{0,35}\b(?:movies?|films?|cinema|episodes?|shows?)\b[\w\s,–\-|]{0,35}\b(?:online|free)\b|\b(?:free\s+movie\s+download|watch\s+movies?\s+online|download\s+movies?|torrent\s+download|download\s+movie\s+torrent|download\s+apk|install\s+apk|install\s+(?:this\s+)?app(?:lication)?\s+to\s+watch)\b)/i },
     { cat: 'GENERAL', regex: /\b(click here|read more|continue|learn more)\b/i }
   ];
 
@@ -40,12 +40,19 @@
     var text = '';
     var current = link.parentElement;
     var depth = 0;
+
+    // Stop climbing past known search result container boundaries to keep context bounded
+    var searchItem = (link.closest && typeof link.closest === 'function')
+      ? link.closest('.g, .MjjYud, .b_algo, article, [data-sokoban-container], [data-hveid]')
+      : null;
+
     while (current && depth < MAX_TRAVERSAL_DEPTH) {
       if (current.tagName === 'BODY' || current.tagName === 'HTML') break;
       var candidate = normalize(current.textContent || current.innerText || '');
       if (candidate.length > text.length) {
         text = candidate;
       }
+      if (searchItem && current === searchItem) break;
       if (text.length > MAX_NEARBY_LEN) break;
       current = current.parentElement;
       depth++;

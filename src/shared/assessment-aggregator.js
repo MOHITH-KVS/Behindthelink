@@ -39,7 +39,9 @@
     'DELIVERY_ACTION': 24,
     'VERIFICATION_ACTION': 25,
     'JOB_ACTION': 26,
-    'DOWNLOAD_OR_MEDIA_CONTEXT': 27
+    'APP_OR_APK_DOWNLOAD_CONTEXT': 27,
+    'UNOFFICIAL_STREAMING_OR_DOWNLOAD_CONTEXT': 28,
+    'DOWNLOAD_OR_MEDIA_CONTEXT': 29
   };
 
   function getPriority(signalId) {
@@ -73,7 +75,9 @@
       'LOOKALIKE_DOMAIN_SIMILARITY': 'The destination domain closely resembles a known brand.',
       'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN': 'A brand name is included in an unrelated domain.',
       'MISLEADING_SUBDOMAIN_STRUCTURE': 'The destination uses a brand name in a misleading subdomain.',
-      'DOWNLOAD_OR_MEDIA_CONTEXT': 'Media or download context'
+      'APP_OR_APK_DOWNLOAD_CONTEXT': 'App or APK download context',
+      'UNOFFICIAL_STREAMING_OR_DOWNLOAD_CONTEXT': 'Movie-download or unofficial streaming context',
+      'DOWNLOAD_OR_MEDIA_CONTEXT': 'Movie-download context detected'
     };
     return map[signalId] || defaultLabel;
   }
@@ -96,7 +100,9 @@
     var hasReward = hasSignal(signals, 'REWARD_OFFER_ACTION');
     var hasDelivery = hasSignal(signals, 'DELIVERY_ACTION');
     var hasJob = hasSignal(signals, 'JOB_ACTION');
-    var hasMedia = hasSignal(signals, 'DOWNLOAD_OR_MEDIA_CONTEXT');
+    var hasApk = hasSignal(signals, 'APP_OR_APK_DOWNLOAD_CONTEXT');
+    var hasUnofficial = hasSignal(signals, 'UNOFFICIAL_STREAMING_OR_DOWNLOAD_CONTEXT');
+    var hasMedia = hasSignal(signals, 'DOWNLOAD_OR_MEDIA_CONTEXT') || hasUnofficial || hasApk;
     var hasThreat = hasSignal(signals, 'REPUTATION_CONFIRMED_THREAT');
     var hasTracking = rawSignals && hasSignal(rawSignals, 'HAS_TRACKING_PARAMS');
     var hasSensitive = hasAccount || hasPayment || hasReward || hasDelivery || hasJob || hasMedia;
@@ -171,7 +177,9 @@
     if (hasReward) return "This link appears to promote a reward or offer.";
     if (hasDelivery) return "This link appears to relate to a delivery.";
     if (hasJob) return "This link relates to a job application or career opportunity observed on the page.";
-    if (hasMedia) return "This link relates to media or download context. Page content and downloadable files were not inspected.";
+    if (hasUnofficial) return "This link appears to lead to a movie-download or unofficial streaming page. The destination's reputation and downloaded files have not been verified.";
+    if (hasApk) return "This link suggests downloading an application or APK to stream or watch content. Downloaded files have not been verified.";
+    if (hasMedia) return "Movie-download context detected. Page content and downloadable files were not inspected.";
     if (hasTracking) return "This link contains tracking information. The destination itself was not changed by this.";
     
     if (signals.length > 0 && signals[0].detail) {
@@ -191,6 +199,8 @@
     var hasReward = hasSignal(signals, 'REWARD_OFFER_ACTION');
     var hasDelivery = hasSignal(signals, 'DELIVERY_ACTION');
     var hasJob = hasSignal(signals, 'JOB_ACTION');
+    var hasApk = hasSignal(signals, 'APP_OR_APK_DOWNLOAD_CONTEXT');
+    var hasUnofficial = hasSignal(signals, 'UNOFFICIAL_STREAMING_OR_DOWNLOAD_CONTEXT');
     var hasThreat = hasSignal(signals, 'REPUTATION_CONFIRMED_THREAT');
     
     var hasStructural = false;
@@ -214,12 +224,19 @@
     }
 
     // When status is INFORMATIONAL and there is NO independent risk concern,
-    // do not issue alarmist action directives for ordinary shopping, jobs, delivery, or media context.
+    // do not issue alarmist action directives for ordinary shopping, jobs, delivery, or general media context.
     if (status === 'INFORMATIONAL' && !hasStructural && !hasMismatch && !hasLookalike && !hasThreat) {
+      if (hasUnofficial || hasApk) {
+        return "Avoid installing APKs or executable files from untrusted sources.";
+      }
       if (hasAccount) {
         return "Check the destination domain before signing in.";
       }
       return null;
+    }
+
+    if (hasUnofficial || hasApk) {
+      return "Avoid installing APKs or executable files from untrusted sources.";
     }
 
     if (hasPayment && hasDelivery) {

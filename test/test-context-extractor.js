@@ -170,6 +170,45 @@ runTest("EXT-013: WhatsApp alias extraction", () => {
   assert.strictEqual(result.possibleClaimedBrand, 'WHATSAPP');
 });
 
+runTest("EXT-014: Watch movies online free phrasing category extraction", () => {
+  const link = createMockElement('a');
+  link.textContent = '5movierulz - Watch Telugu, Tamil, Hindi Movies Online Free';
+  const result = extractor.extract(link);
+  assert.strictEqual(result.category, 'MEDIA_OR_DOWNLOAD');
+});
+
+runTest("EXT-015: Download full movies HD category extraction", () => {
+  const link = createMockElement('a');
+  link.textContent = '5MovieRulz - Download Bollywood, Hollywood Full Movies HD';
+  const result = extractor.extract(link);
+  assert.strictEqual(result.category, 'MEDIA_OR_DOWNLOAD');
+});
+
+runTest("EXT-016: Google search DOM tree depth traversal to snippet", () => {
+  const cardDiv = createMockElement('div'); // Depth 5
+  const colDiv = createMockElement('div');  // Depth 4
+  const titleContainer = createMockElement('div'); // Depth 3
+  const yuRUbfDiv = createMockElement('div'); // Depth 2
+  const wrapperDiv = createMockElement('div'); // Depth 1
+  const link = createMockElement('a');
+  link.textContent = '5movierulz';
+  
+  cardDiv.appendChild(colDiv);
+  colDiv.appendChild(titleContainer);
+  titleContainer.appendChild(yuRUbfDiv);
+  yuRUbfDiv.appendChild(wrapperDiv);
+  wrapperDiv.appendChild(link);
+  
+  // Snippet at Depth 4
+  const snippetDiv = createMockElement('div');
+  snippetDiv.textContent = '5movierulz is a pirated torrent website to download Telugu, Tamil, Malayalam, Hindi movies online free in HD';
+  colDiv.appendChild(snippetDiv);
+
+  const result = extractor.extract(link);
+  assert.strictEqual(result.category, 'MEDIA_OR_DOWNLOAD');
+  assert.ok(result.nearbyText.includes('pirated torrent website'));
+});
+
 console.log(`\nResults: ${passed}/${total} passed`);
 if (passed !== total) process.exit(1);
 
