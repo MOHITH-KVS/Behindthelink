@@ -6,6 +6,7 @@ const tests = [
   'test/test-canonicalization.js',
   'test/test-expression-generator.js',
   'test/test-reputation-engine.js',
+  'test/test-local-threat-db.js',
   'test/test-context-extractor.js',
   'test/test-claim-destination.js',
   'test/test-deception-analyzer.js',

@@ -1,7 +1,10 @@
-const { checkReputation, __setCache, __clearCache, __getCache } = require('../src/background/reputation-engine.js');
-const { computeHash, getPrefix, toBase64 } = require('../src/shared/reputation/hash-utils.js');
+const { checkReputation, setDatabase, resetDatabase, getDatabaseStatus } = require('../src/background/reputation-engine.js');
+const localThreatDb = require('../src/shared/reputation/local-threat-db.js');
+const { computeHash, toHex } = require('../src/shared/reputation/hash-utils.js');
 const { parseAndCanonicalize } = require('../src/shared/reputation/canonicalization.js');
 const { generateExpressions } = require('../src/shared/reputation/expression-generator.js');
+const fs = require('fs');
+const path = require('path');
 
 async function runTests() {
   let passed = 0;
@@ -29,224 +32,131 @@ async function runTests() {
     }
   }
 
-  console.log("=== REPUTATION ENGINE TESTS ===");
+  console.log("=== REPUTATION ENGINE TESTS (LOCAL-FIRST) ===");
 
-  let fetchCallCount = 0;
-  let mockFetchResponse = null;
-  let lastRequestBody = null;
-  
-  // Set up opt-in mock
+  let networkCallCount = 0;
+  global.fetch = async () => {
+    networkCallCount++;
+    throw new Error("SECURITY VIOLATION: Network request attempted during local reputation check");
+  };
+
+  // Mock chrome.storage.local for opt-in testing
+  let mockStorage = { reputationEnabled: true };
   global.chrome = {
     storage: {
       local: {
-        get: (keys, cb) => cb({ reputationEnabled: true })
+        get: (keys, cb) => cb(mockStorage)
       }
     }
   };
 
-  global.fetch = async (url, options) => {
-    fetchCallCount++;
-    lastRequestBody = JSON.parse(options.body);
-    await new Promise(r => setTimeout(r, 50)); // Force async overlap
-    if (mockFetchResponse) {
-      if (mockFetchResponse.throws) throw new Error("Network error");
-      return {
-        ok: mockFetchResponse.ok !== false,
-        status: mockFetchResponse.status || 200,
-        json: async () => mockFetchResponse.body
-      };
-    }
-    return { ok: true, json: async () => ({ results: [] }) };
-  };
-
-  // Test 1: PROXY REQUEST VALIDATION
-  __clearCache();
-  fetchCallCount = 0;
-  lastRequestBody = null;
-  await checkReputation("http://example.com/path?q=1", "http://redirect.com");
-  
-  assertCondition(lastRequestBody !== null, "Proxy fetch occurred");
-  assertCondition(Array.isArray(lastRequestBody.prefixes), "Request contains prefixes array");
-  
-  let validPrefixes = true;
-  for (const p of lastRequestBody.prefixes) {
-    const buf = Buffer.from(p, 'base64');
-    if (buf.length !== 4) validPrefixes = false;
+  function reloadBundledDb() {
+    const dbPath = path.join(__dirname, '../src/data/bundled-threat-db.json');
+    const raw = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    setDatabase(raw);
   }
-  assertCondition(validPrefixes, "Proxy Request Validation: ALL prefixes are exactly 4 bytes");
-  assertCondition(JSON.stringify(lastRequestBody).indexOf("example.com") === -1, "Proxy Request Validation: full hostname is NEVER sent");
 
-  // Test 2: In-flight deduplication
-  __clearCache();
-  fetchCallCount = 0;
-  const p1 = checkReputation("http://dedup.com");
-  const p2 = checkReputation("http://dedup.com");
-  const p3 = checkReputation("http://dedup.com");
-  await Promise.all([p1, p2, p3]);
-  assertEqual(fetchCallCount, 1, "In-flight Request Deduplication: Rapid identical lookups result in exactly 1 fetch");
+  // Ensure bundled DB is loaded
+  reloadBundledDb();
 
-  // Test 3: Reputation Disabled Guarantee
-  __clearCache();
-  fetchCallCount = 0;
-  global.chrome.storage.local.get = (keys, cb) => cb({ reputationEnabled: false });
-  let result = await checkReputation("http://malware.com");
-  assertEqual(result.status, "REPUTATION_NOT_ENABLED", "Reputation Disabled: returns correct status");
-  assertEqual(fetchCallCount, 0, "Reputation Disabled: Zero network requests occurred");
-  global.chrome.storage.local.get = (keys, cb) => cb({ reputationEnabled: true }); // Re-enable
+  // Test 1: Zero network requests on lookup
+  networkCallCount = 0;
+  const res1 = await checkReputation("http://example.com/test");
+  assertEqual(res1.status, "REPUTATION_NO_MATCH", "Benign URL returns REPUTATION_NO_MATCH");
+  assertEqual(networkCallCount, 0, "Zero network requests occurred during lookup");
 
-  // Test 4: Stale Negative Cache handling
-  __clearCache();
-  fetchCallCount = 0;
-  const can = parseAndCanonicalize("http://cachetest.com");
-  const exprs = generateExpressions(can);
-  const fullHashBytes = await computeHash(exprs[0]);
-  const fullHashB64 = toBase64(fullHashBytes);
-  const prefixB64 = toBase64(getPrefix(fullHashBytes));
-  
-  __setCache(prefixB64, {
-    negativeExpireAt: Date.now() - 1000, // expired
-    positiveMatches: []
+  // Test 2: Reputation Disabled Guarantee
+  mockStorage.reputationEnabled = false;
+  const disabledRes = await checkReputation("http://malware.test/payload.exe");
+  assertEqual(disabledRes.status, "REPUTATION_NOT_ENABLED", "Reputation Disabled: returns correct status");
+  assertEqual(networkCallCount, 0, "Reputation Disabled: Zero network requests occurred");
+  mockStorage.reputationEnabled = true; // Re-enable
+
+  // Test 3: Fixture match returns CONFIRMED_THREAT
+  const hitRes = await checkReputation("http://malware.test/payload.exe");
+  assertEqual(hitRes.status, "REPUTATION_CONFIRMED_THREAT", "Exact fixture matches CONFIRMED_THREAT");
+  assertEqual(hitRes.threatTypes, ["MALWARE"], "Threat types match MALWARE");
+  assertEqual(hitRes.isFixture, true, "isFixture flag correctly set");
+
+  // Test 4: Path-specific precision
+  const safePathRes = await checkReputation("http://malware.test/safe-page.html");
+  assertEqual(safePathRes.status, "REPUTATION_NO_MATCH", "Different path on host does not match path-specific threat");
+
+  // Test 5: Query-specific matching
+  const queryHit = await checkReputation("http://malware-gate.test/download.php?aff=123");
+  assertEqual(queryHit.status, "REPUTATION_CONFIRMED_THREAT", "Query-specific threat matches exact query parameters");
+
+  const queryMiss = await checkReputation("http://malware-gate.test/download.php?aff=999");
+  assertEqual(queryMiss.status, "REPUTATION_NO_MATCH", "Mismatched query parameter does not trigger threat");
+
+  // Test 6: Root C2 matching covers subpaths
+  const rootHit = await checkReputation("http://botnet-c2.test/command/exec");
+  assertEqual(rootHit.status, "REPUTATION_CONFIRMED_THREAT", "Root-level threat matches subpaths");
+
+  // Test 7: Redirect destination detection
+  const redirectHit = await checkReputation("http://clean-shortener.test/xyz", "http://malware.test/payload.exe");
+  assertEqual(redirectHit.status, "REPUTATION_CONFIRMED_THREAT", "Redirect destination threat detected");
+
+  // Test 8: Hash-prefix collision resistance (CRITICAL)
+  // Construct a collision: shares first 4 bytes (8 hex chars) with a threat, but differs in 28 bytes
+  const threatBytes = await computeHash("malware.test/payload.exe");
+  const threatHex = toHex(threatBytes);
+  const prefixHex = threatHex.substring(0, 8);
+  const collidingFakeHash = prefixHex + "99999999999999999999999999999999999999999999999999999999";
+
+  setDatabase({
+    formatVersion: 1,
+    source: 'COLLISION_TEST',
+    isFixture: true,
+    hashes: {
+      [collidingFakeHash]: { threatTypes: ['MALWARE'] }
+    }
   });
-  
-  mockFetchResponse = {
-    body: {
-      results: []
-    }
-  };
-  await checkReputation("http://cachetest.com");
-  assertEqual(fetchCallCount, 1, "Expired negative cache triggers fresh lookup");
 
-  // Test 5: Stale Positive Cache handling
-  __clearCache();
-  fetchCallCount = 0;
-  __setCache(prefixB64, {
-    negativeExpireAt: Date.now() + 10000,
-    positiveMatches: [
-      { hashBase64: fullHashB64, threatTypes: ["MALWARE"], expireAt: Date.now() - 1000 } // expired positive
-    ]
+  const collisionResult = await checkReputation("http://malware.test/payload.exe");
+  assertEqual(collisionResult.status, "REPUTATION_NO_MATCH", "Prefix collision without exact full hash does NOT match");
+
+  // Restore bundled database
+  reloadBundledDb();
+
+  // Test 9: Supported Threat Types filtering
+  setDatabase({
+    formatVersion: 1,
+    source: 'FILTER_TEST',
+    isFixture: true,
+    hashes: {
+      [threatHex]: { threatTypes: ["UNKNOWN_FUTURE_THREAT", "SOCIAL_ENGINEERING"] }
+    }
   });
-  await checkReputation("http://cachetest.com");
-  assertEqual(fetchCallCount, 1, "Expired positive match triggers fresh lookup");
-  
-  // Test 6: Stale Positive Threat does NOT produce STRONG_WARNING if offline
-  __clearCache();
-  fetchCallCount = 0;
-  __setCache(prefixB64, {
-    negativeExpireAt: Date.now() + 10000,
-    positiveMatches: [
-      { hashBase64: fullHashB64, threatTypes: ["MALWARE"], expireAt: Date.now() - 1000 } // expired positive
-    ]
-  });
-  mockFetchResponse = { throws: true }; // network failure
-  result = await checkReputation("http://cachetest.com");
-  assertEqual(result.status, "REPUTATION_UNAVAILABLE", "Stale positive threat with network failure returns UNAVAILABLE, not STRONG_WARNING");
+  const filterResult = await checkReputation("http://malware.test/payload.exe");
+  assertEqual(filterResult.status, "REPUTATION_CONFIRMED_THREAT", "Threat matches recognized types");
+  assertEqual(filterResult.threatTypes, ["SOCIAL_ENGINEERING"], "Unknown threat type filtered out");
 
-  // Test 7: Positive cache hit (Fresh)
-  __clearCache();
-  fetchCallCount = 0;
-  __setCache(prefixB64, {
-    negativeExpireAt: Date.now() + 10000,
-    positiveMatches: [
-      { hashBase64: fullHashB64, threatTypes: ["MALWARE"], expireAt: Date.now() + 10000 } // fresh
-    ]
-  });
-  result = await checkReputation("http://cachetest.com");
-  assertEqual(result.status, "REPUTATION_CONFIRMED_THREAT", "Fresh positive match returns CONFIRMED_THREAT");
-  assertEqual(fetchCallCount, 0, "Fresh positive match does NOT trigger network request");
+  // Test 10: Unloaded database returns UNAVAILABLE (never safe)
+  resetDatabase();
+  const unavailResult = await checkReputation("http://malware.test/payload.exe");
+  assertEqual(unavailResult.status, "REPUTATION_UNAVAILABLE", "Unloaded database returns UNAVAILABLE");
 
-  // Test 8: Strict Hash Validation (Malformed Prefix)
-  __clearCache();
-  fetchCallCount = 0;
-  mockFetchResponse = {
-    body: {
-      results: [
-        {
-          prefix: "abcd", // not 4 bytes when decoded
-          negativeExpireTime: new Date(Date.now() + 10000).toISOString(),
-          threats: []
-        }
-      ]
-    }
-  };
-  await checkReputation("http://cachetest.com");
-  const cached = __getCache(prefixB64);
-  assertCondition(!cached, "Strict Hash Validation: Malformed prefix was rejected from cache");
+  // Test 11: Malformed database returns UNAVAILABLE
+  setDatabase({ formatVersion: "invalid" });
+  const malformedResult = await checkReputation("http://malware.test/payload.exe");
+  assertEqual(malformedResult.status, "REPUTATION_UNAVAILABLE", "Malformed database returns UNAVAILABLE");
 
-  // Test 9: Strict Hash Validation (Malformed Full Hash)
-  __clearCache();
-  fetchCallCount = 0;
-  mockFetchResponse = {
-    body: {
-      results: [
-        {
-          prefix: prefixB64,
-          negativeExpireTime: new Date(Date.now() + 10000).toISOString(),
-          threats: [
-            { hash: "malformedHashThatIsNot32BytesLong", threatTypes: ["MALWARE"], expireTime: new Date(Date.now() + 10000).toISOString() }
-          ]
-        }
-      ]
-    }
-  };
-  result = await checkReputation("http://cachetest.com");
-  assertEqual(result.status, "REPUTATION_NO_MATCH", "Strict Hash Validation: Malformed full hash does not trigger threat");
-  const cached2 = __getCache(prefixB64);
-  assertEqual(cached2.positiveMatches.length, 0, "Malformed full hash was excluded from positiveMatches");
+  // Restore bundled database
+  reloadBundledDb();
 
-  // Test 10: Supported Threat Types filter
-  __clearCache();
-  fetchCallCount = 0;
-  mockFetchResponse = {
-    body: {
-      results: [
-        {
-          prefix: prefixB64,
-          negativeExpireTime: new Date(Date.now() + 10000).toISOString(),
-          threats: [
-            { hash: fullHashB64, threatTypes: ["UNKNOWN_FUTURE_THREAT", "SOCIAL_ENGINEERING"], expireTime: new Date(Date.now() + 10000).toISOString() }
-          ]
-        }
-      ]
-    }
-  };
-  result = await checkReputation("http://cachetest.com");
-  assertEqual(result.status, "REPUTATION_CONFIRMED_THREAT", "Supported Threat Types: Unknown threats ignored, recognized threats processed");
-  assertEqual(result.threatTypes, ["SOCIAL_ENGINEERING"], "Unknown threat type filtered out");
+  // Test 12: Malformed URL input does not crash
+  const malformedUrlResult = await checkReputation("not a valid url at all %zz %%%");
+  assertEqual(malformedUrlResult.status, "REPUTATION_NO_MATCH", "Malformed URL handled gracefully");
 
-  // Test 11: Network Failure
-  __clearCache();
-  fetchCallCount = 0;
-  mockFetchResponse = { throws: true };
-  result = await checkReputation("http://example.com");
-  assertEqual(result.status, "REPUTATION_UNAVAILABLE", "Network failure returns UNAVAILABLE");
+  // Final network call check
+  assertEqual(networkCallCount, 0, "Zero network requests occurred throughout all tests");
 
-  // Test 12: Prefix Collision
-  __clearCache();
-  fetchCallCount = 0;
-  const dummyHashBytes = await computeHash("http://some-other-url.com");
-  const dummyHashB64 = toBase64(dummyHashBytes);
-  
-  mockFetchResponse = {
-    body: {
-      results: [
-        {
-          prefix: prefixB64, // match prefix
-          negativeExpireTime: new Date(Date.now() + 10000).toISOString(),
-          threats: [
-            { hash: dummyHashB64, threatTypes: ["MALWARE"], expireTime: new Date(Date.now() + 10000).toISOString() } // WRONG FULL HASH
-          ]
-        }
-      ]
-    }
-  };
-  result = await checkReputation("http://cachetest.com");
-  assertEqual(result.status, "REPUTATION_NO_MATCH", "Prefix collision without exact full-hash match does NOT trigger threat");
-  
   console.log(`\nRESULTS: ${passed}/${total} passed`);
   if (passed !== total) process.exitCode = 1;
 }
 
 runTests().catch(e => {
-  console.error(e);
+  console.error("Test execution failed:", e);
   process.exitCode = 1;
 });

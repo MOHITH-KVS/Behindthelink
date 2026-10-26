@@ -1,0 +1,13 @@
+# URLhaus Offline Synthetic Fixture Dataset for BehindTheLink Phase 2A
+#
+# IMPORTANT NOTICE:
+# These entries are SYNTHETIC, RESERVED test fixtures using RFC 2606 / RFC 6761 special-use domains (.test).
+# They are used exclusively for offline deterministic testing and development of BehindTheLink.
+# They are NOT live malicious URLs and NOT real-world threat intelligence.
+#
+# Fields: id,dateadded,url,url_status,last_online,threat,tags,urlhaus_link,reporter
+1,2026-10-26 00:00:00,http://malware.test/payload.exe,online,2026-10-26 00:00:00,malware_download,exe,https://urlhaus.abuse.ch/,fixture
+2,2026-10-26 00:00:00,http://malware-gate.test/download.php?aff=123,online,2026-10-26 00:00:00,malware_download,php,https://urlhaus.abuse.ch/,fixture
+3,2026-10-26 00:00:00,http://botnet-c2.test/,online,2026-10-26 00:00:00,malware_download,c2,https://urlhaus.abuse.ch/,fixture
+4,2026-10-26 00:00:00,http://port-malware.test:8080/drop.bin,online,2026-10-26 00:00:00,malware_download,bin,https://urlhaus.abuse.ch/,fixture
+5,2026-10-26 00:00:00,http://bad.sub.example.test/dropper.dll,online,2026-10-26 00:00:00,malware_download,dll,https://urlhaus.abuse.ch/,fixture

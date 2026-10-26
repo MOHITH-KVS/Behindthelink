@@ -22,8 +22,28 @@ importScripts(
   '../shared/reputation/canonicalization.js',
   '../shared/reputation/expression-generator.js',
   '../shared/reputation/hash-utils.js',
+  '../shared/reputation/local-threat-db.js',
   './reputation-engine.js'
 );
+
+// Initialize bundled local threat database on service worker startup
+if (typeof self !== 'undefined' && self.BehindTheLink && self.BehindTheLink.localThreatDb && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
+  try {
+    fetch(chrome.runtime.getURL('src/data/bundled-threat-db.json'))
+      .then(res => {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(data => {
+        self.BehindTheLink.localThreatDb.loadDatabase(data);
+      })
+      .catch(err => {
+        console.warn('BehindTheLink: Unable to load bundled threat database:', err.message);
+      });
+  } catch (e) {
+    console.warn('BehindTheLink: Bundled threat database fetch initialization error:', e.message);
+  }
+}
 
 const activeRequests = new Map();
 const TIMEOUT_MS = (typeof self !== 'undefined' ? self : window).BehindTheLink.DESTINATION_TIMEOUT || 5000;

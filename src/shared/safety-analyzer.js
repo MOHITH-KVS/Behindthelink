@@ -554,6 +554,8 @@
     if (reputationSignals) {
       if (reputationSignals.status === 'REPUTATION_CONFIRMED_THREAT') {
         reputationStatus = 'KNOWN_THREAT';
+        var threatTypesStr = reputationSignals.threatTypes ? reputationSignals.threatTypes.join(', ') : 'malicious';
+        var isFixture = !!reputationSignals.isFixture;
         tierD.push({
           id: 'REPUTATION_CONFIRMED_THREAT',
           tier: 'D',
@@ -561,8 +563,11 @@
           urlContext: 'reputation_check',
           source: 'reputation_engine',
           epistemic: 'VERIFIED',
-          label: 'Known threat detected',
-          detail: 'This link was flagged as a known threat (' + (reputationSignals.threatTypes ? reputationSignals.threatTypes.join(', ') : 'malicious') + ').'
+          isFixture: isFixture,
+          label: isFixture ? 'Known threat detected (Test fixture)' : 'Known threat detected',
+          detail: isFixture
+            ? 'This link was flagged by the local test fixture dataset (' + threatTypesStr + '). Note: Synthetic test fixture, not live threat intelligence.'
+            : 'This link was flagged as a known threat (' + threatTypesStr + ').'
         });
       } else if (reputationSignals.status === 'REPUTATION_NO_MATCH') {
         reputationStatus = 'NO_KNOWN_THREAT';
