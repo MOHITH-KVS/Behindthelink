@@ -343,6 +343,175 @@ async function runTestSuite() {
     assert.strictEqual(networkCallCount, 0, "No external network requests must have occurred during any test");
   });
 
+  // Test 15: Fix 1 — Independent checking of original and redirected URLs
+  await asyncTest("15. Fix 1: Check original and redirected URLs independently", async () => {
+    // Reload bundled DB
+    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/data/bundled-threat-db.json'), 'utf8'));
+    localThreatDb.loadDatabase(raw);
+    global.chrome.storage.local.get = (keys, cb) => cb({ reputationEnabled: true });
+
+    // A: Malicious original URL redirecting to a benign destination
+    const r1 = await reputationEngine.checkReputation("http://malware.test/payload.exe", "https://google.com");
+    assert.strictEqual(r1.status, "REPUTATION_CONFIRMED_THREAT", "Malicious original URL with benign redirect destination must be caught");
+
+    // B: Benign original URL redirecting to a known threat fixture
+    const r2 = await reputationEngine.checkReputation("https://example.com/clean", "http://malware.test/payload.exe");
+    assert.strictEqual(r2.status, "REPUTATION_CONFIRMED_THREAT", "Benign original URL redirecting to threat fixture must be caught");
+
+    // C: Unresolved redirects (redirect destination is null / undefined)
+    const r3 = await reputationEngine.checkReputation("http://malware.test/payload.exe", null);
+    assert.strictEqual(r3.status, "REPUTATION_CONFIRMED_THREAT", "Unresolved redirect must check original URL");
+
+    const r3b = await reputationEngine.checkReputation("http://malware.test/payload.exe", undefined);
+    assert.strictEqual(r3b.status, "REPUTATION_CONFIRMED_THREAT", "Undefined redirect must check original URL");
+
+    // D: Duplicate original and destination URLs
+    const r4 = await reputationEngine.checkReputation("http://malware.test/payload.exe", "http://malware.test/payload.exe");
+    assert.strictEqual(r4.status, "REPUTATION_CONFIRMED_THREAT", "Duplicate original and destination URLs must be handled cleanly");
+  });
+
+  // Test 16: Fix 2 — Fresh installation default, opt-out, opt-in, and persistence
+  await asyncTest("16. Fix 2: Enable local threat matching by default with opt-out/opt-in persistence", async () => {
+    let mockStorage = {};
+
+    global.chrome.storage.local.get = (keys, cb) => cb(mockStorage);
+    global.chrome.storage.local.set = (obj, cb) => {
+      Object.assign(mockStorage, obj);
+      if (cb) cb();
+    };
+
+    // A: Fresh installation default (reputationEnabled not present in storage)
+    mockStorage = {};
+    const optedInDefault = await reputationEngine.isOptedIn();
+    assert.strictEqual(optedInDefault, true, "Fresh installation must default to reputationEnabled === true");
+
+    const freshRes = await reputationEngine.checkReputation("http://malware.test/payload.exe");
+    assert.strictEqual(freshRes.status, "REPUTATION_CONFIRMED_THREAT", "Fresh install performs threat matching by default");
+
+    // B: User opt-out (explicitly set to false)
+    mockStorage = { reputationEnabled: false };
+    const optedOut = await reputationEngine.isOptedIn();
+    assert.strictEqual(optedOut, false, "Opt-out must report false");
+
+    const optOutRes = await reputationEngine.checkReputation("http://malware.test/payload.exe");
+    assert.strictEqual(optOutRes.status, "REPUTATION_NOT_ENABLED", "Opt-out returns REPUTATION_NOT_ENABLED");
+
+    // C: User opt-in (explicitly set to true)
+    mockStorage = { reputationEnabled: true };
+    const optedIn = await reputationEngine.isOptedIn();
+    assert.strictEqual(optedIn, true, "Opt-in must report true");
+
+    const optInRes = await reputationEngine.checkReputation("http://malware.test/payload.exe");
+    assert.strictEqual(optInRes.status, "REPUTATION_CONFIRMED_THREAT", "Re-enabled reputation matches threats");
+  });
+
+  // Test 17: Fix 2 — Disabling local reputation does NOT disable existing heuristic protections
+  await asyncTest("17. Fix 2: Disabling local reputation does NOT disable heuristic protections", async () => {
+    const disabledRep = { status: 'REPUTATION_NOT_ENABLED' };
+    const computeEvidence = global.BehindTheLink.safetyAnalyzer.computeSafetyEvidence;
+
+    // Structural anomalies (IP host + unusual port)
+    const safetyResult = computeEvidence(
+      "http://192.168.1.1:8080/login",
+      { isShortened: false, isHttps: false, hostname: "192.168.1.1" },
+      { 
+        signals: [
+          { type: 'IP_HOST' },
+          { type: 'UNUSUAL_PORT' }
+        ] 
+      },
+      null,
+      null,
+      { status: "NO_REDIRECT_OBSERVED" },
+      null,
+      disabledRep,
+      null
+    );
+
+    assert.notStrictEqual(safetyResult.verdict, "NO_KNOWN_THREAT", "Heuristics must not be silenced when reputation is disabled");
+    assert.strictEqual(safetyResult.status, "UNUSUAL_CHARACTERISTICS", "Structural anomalies still trigger UNUSUAL_CHARACTERISTICS");
+    assert.strictEqual(safetyResult.reputationStatus, "REPUTATION_NOT_ENABLED", "Reputation status accurately reflects disabled state");
+  });
+
+  // Test 18: Fix 3 — Startup race: checkReputation awaits in-flight initialization
+  await asyncTest("18. Fix 3: checkReputation awaits in-flight initialization without returning UNAVAILABLE", async () => {
+    localThreatDb.resetDatabase();
+    assert.strictEqual(localThreatDb.isReady(), false);
+
+    const bundledDbData = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/data/bundled-threat-db.json'), 'utf8'));
+    let loaderCalled = false;
+
+    // Simulate in-flight asynchronous database loading
+    localThreatDb.ensureInitialized(() => {
+      loaderCalled = true;
+      return new Promise(resolve => setTimeout(() => resolve(bundledDbData), 25));
+    });
+
+    // Immediate lookup while initialization is in-flight
+    const raceResult = await reputationEngine.checkReputation("http://malware.test/payload.exe");
+    assert.ok(loaderCalled, "Loader must have been invoked");
+    assert.strictEqual(raceResult.status, "REPUTATION_CONFIRMED_THREAT", "Check must await initialization promise and return threat match");
+  });
+
+  // Test 19: Fix 3 — Genuine initialization failure returns REPUTATION_UNAVAILABLE (never clean)
+  await asyncTest("19. Fix 3: Genuine initialization failure reports REPUTATION_UNAVAILABLE without claiming URL is safe", async () => {
+    localThreatDb.resetDatabase();
+    assert.strictEqual(localThreatDb.isReady(), false);
+
+    // Simulate genuine initialization failure
+    localThreatDb.ensureInitialized(() => Promise.reject(new Error("Storage disk corruption")));
+
+    const failResult = await reputationEngine.checkReputation("http://malware.test/payload.exe");
+    assert.strictEqual(failResult.status, "REPUTATION_UNAVAILABLE", "Failed initialization must return REPUTATION_UNAVAILABLE");
+    assert.notStrictEqual(failResult.status, "REPUTATION_NO_MATCH", "Failed initialization must never claim URL is safe");
+
+    // Restore database
+    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/data/bundled-threat-db.json'), 'utf8'));
+    localThreatDb.loadDatabase(raw);
+  });
+
+  // Test 20: Fix 2 — Options page user-facing toggle interaction
+  await asyncTest("20. Fix 2: Options page toggle DOM interaction and storage sync", async () => {
+    let mockStorage = {};
+    const mockElement = {
+      checked: false,
+      listeners: {},
+      addEventListener: function (evt, handler) { this.listeners[evt] = handler; },
+      trigger: function (evt) { if (this.listeners[evt]) this.listeners[evt](); }
+    };
+
+    global.chrome.storage.local.get = (keys, cb) => cb(mockStorage);
+    global.chrome.storage.local.set = (obj, cb) => {
+      Object.assign(mockStorage, obj);
+      if (cb) cb();
+    };
+
+    // Fresh install: storage has no reputationEnabled key
+    mockStorage = {};
+    // Simulate options.js logic on fresh install
+    global.chrome.storage.local.get(['reputationEnabled'], (res) => {
+      mockElement.checked = res.reputationEnabled !== false;
+    });
+    assert.strictEqual(mockElement.checked, true, "Options toggle defaults to checked on fresh install");
+
+    // User disables toggle in options UI
+    mockElement.checked = false;
+    global.chrome.storage.local.set({ reputationEnabled: mockElement.checked });
+    assert.strictEqual(mockStorage.reputationEnabled, false, "Toggling off updates chrome.storage.local to false");
+
+    // Later session load: storage has reputationEnabled: false
+    let nextSessionToggle = { checked: true };
+    global.chrome.storage.local.get(['reputationEnabled'], (res) => {
+      nextSessionToggle.checked = res.reputationEnabled !== false;
+    });
+    assert.strictEqual(nextSessionToggle.checked, false, "Subsequent session loads opt-out state as unchecked");
+
+    // User re-enables toggle
+    nextSessionToggle.checked = true;
+    global.chrome.storage.local.set({ reputationEnabled: nextSessionToggle.checked });
+    assert.strictEqual(mockStorage.reputationEnabled, true, "Toggling on updates chrome.storage.local to true");
+  });
+
   console.log(`\nLocal Threat DB Results: ${passed}/${total} passed`);
   if (passed !== total) {
     process.exitCode = 1;

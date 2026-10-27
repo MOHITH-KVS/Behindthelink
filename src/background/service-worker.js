@@ -26,23 +26,11 @@ importScripts(
   './reputation-engine.js'
 );
 
-// Initialize bundled local threat database on service worker startup
-if (typeof self !== 'undefined' && self.BehindTheLink && self.BehindTheLink.localThreatDb && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
-  try {
-    fetch(chrome.runtime.getURL('src/data/bundled-threat-db.json'))
-      .then(res => {
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.json();
-      })
-      .then(data => {
-        self.BehindTheLink.localThreatDb.loadDatabase(data);
-      })
-      .catch(err => {
-        console.warn('BehindTheLink: Unable to load bundled threat database:', err.message);
-      });
-  } catch (e) {
-    console.warn('BehindTheLink: Bundled threat database fetch initialization error:', e.message);
-  }
+// Initialize bundled local threat database on service worker startup using shared initialization promise
+if (typeof self !== 'undefined' && self.BehindTheLink && self.BehindTheLink.localThreatDb && typeof self.BehindTheLink.localThreatDb.ensureInitialized === 'function') {
+  self.BehindTheLink.localThreatDb.ensureInitialized().catch(err => {
+    console.warn('BehindTheLink: Bundled threat database initialization failed:', err);
+  });
 }
 
 const activeRequests = new Map();
@@ -384,6 +372,12 @@ async function resolveDestination(originalUrlString, requestId, contextObj) {
   }
 
   let reputationSignals = { status: 'REPUTATION_NOT_ENABLED' };
+  if (BTL.reputationEngine && typeof BTL.reputationEngine.isOptedIn === 'function') {
+    const enabled = await BTL.reputationEngine.isOptedIn();
+    if (enabled) {
+      reputationSignals = { status: 'REPUTATION_PENDING' };
+    }
+  }
   
   const safetyEvidence = BTL.safetyAnalyzer ? BTL.safetyAnalyzer.computeSafetyEvidence(
     originalUrlString,
@@ -412,8 +406,11 @@ async function checkReputationAndAnalyze(targetUrl, requestId, originalUrlString
   let reputationSignals = { status: 'REPUTATION_NOT_ENABLED' };
   
   if (BTL.reputationEngine) {
-    // Only check the explicitly passed targetUrl
-    reputationSignals = await BTL.reputationEngine.checkReputation(targetUrl, null);
+    const redirectTarget = (networkResponse && networkResponse.networkEvidence && networkResponse.networkEvidence.status === 'HTTP_REDIRECT_OBSERVED' && networkResponse.networkEvidence.redirectTarget)
+      ? networkResponse.networkEvidence.redirectTarget
+      : ((targetUrl && targetUrl !== originalUrlString) ? targetUrl : null);
+
+    reputationSignals = await BTL.reputationEngine.checkReputation(originalUrlString, redirectTarget);
   }
 
   const { localSignals, riskSignals, networkEvidence, browserObservation } = networkResponse;

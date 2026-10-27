@@ -42,7 +42,8 @@
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
       return new Promise(resolve => {
         chrome.storage.local.get(['reputationEnabled'], (res) => {
-          resolve(!!res.reputationEnabled);
+          // Fresh installation default: enabled (true) unless explicitly set to false
+          resolve(res.reputationEnabled !== false);
         });
       });
     }
@@ -65,12 +66,24 @@
     }
 
     const db = getActiveDb();
-    if (!db || !db.isReady()) {
+    if (!db) {
       return { status: 'REPUTATION_UNAVAILABLE' };
     }
 
-    const urlsToCheck = [targetUrl];
-    if (redirectTarget && redirectTarget !== targetUrl) {
+    // Await database initialization if in progress or not ready
+    if (!db.isReady() && typeof db.ensureInitialized === 'function') {
+      await db.ensureInitialized();
+    }
+
+    if (!db.isReady()) {
+      return { status: 'REPUTATION_UNAVAILABLE' };
+    }
+
+    const urlsToCheck = [];
+    if (targetUrl && typeof targetUrl === 'string') {
+      urlsToCheck.push(targetUrl);
+    }
+    if (redirectTarget && typeof redirectTarget === 'string' && redirectTarget !== targetUrl) {
       urlsToCheck.push(redirectTarget);
     }
 
@@ -134,6 +147,7 @@
 
   return {
     checkReputation,
+    isOptedIn,
     setDatabase: (data) => {
       const db = getActiveDb();
       return db ? db.loadDatabase(data) : false;

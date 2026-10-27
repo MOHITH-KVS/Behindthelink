@@ -24,6 +24,7 @@
   let activeDatabase = null;
   let isLoaded = false;
   let lastError = null;
+  let initPromise = null;
 
   function validateDatabaseSchema(data) {
     if (!data || typeof data !== 'object') {
@@ -50,6 +51,7 @@
     activeDatabase = data;
     isLoaded = true;
     lastError = null;
+    initPromise = Promise.resolve(true);
     return true;
   }
 
@@ -57,10 +59,66 @@
     activeDatabase = null;
     isLoaded = false;
     lastError = null;
+    initPromise = null;
   }
 
   function isReady() {
     return isLoaded && activeDatabase !== null;
+  }
+
+  function ensureInitialized(customLoader) {
+    if (isReady()) {
+      return Promise.resolve(true);
+    }
+    if (initPromise) {
+      return initPromise;
+    }
+
+    if (typeof customLoader === 'function') {
+      initPromise = Promise.resolve()
+        .then(() => customLoader())
+        .then(data => {
+          const loaded = loadDatabase(data);
+          if (!loaded) throw new Error(lastError || 'Invalid database schema');
+          return true;
+        })
+        .catch(err => {
+          lastError = 'Initialization failed: ' + err.message;
+          return false;
+        })
+        .finally(() => {
+          if (!isReady()) {
+            initPromise = null;
+          }
+        });
+      return initPromise;
+    }
+
+    // Default loader in Chrome extension environment
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL && typeof fetch === 'function') {
+      initPromise = fetch(chrome.runtime.getURL('src/data/bundled-threat-db.json'))
+        .then(res => {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        })
+        .then(data => {
+          const loaded = loadDatabase(data);
+          if (!loaded) throw new Error(lastError || 'Invalid database schema');
+          return true;
+        })
+        .catch(err => {
+          lastError = 'Fetch failed: ' + err.message;
+          return false;
+        })
+        .finally(() => {
+          if (!isReady()) {
+            initPromise = null;
+          }
+        });
+      return initPromise;
+    }
+
+    return Promise.resolve(isReady());
   }
 
   function getStatus() {
@@ -120,6 +178,7 @@
     loadDatabase,
     resetDatabase,
     isReady,
+    ensureInitialized,
     getStatus,
     lookupHash
   };

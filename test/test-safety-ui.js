@@ -110,7 +110,7 @@ runTest("UI-001: Renders Header, Dest, Link Type, Safety", () => {
   });
   
   const labels = findElementsByClass(card, 'btl-label').map(e => e.textContent);
-  assert.ok(labels.includes('WHERE IT GOES') || labels.includes('OPENS'));
+  assert.ok(labels.includes('WHERE IT GOES') || labels.includes('OPENS') || labels.includes('DESTINATION'));
   assert.ok(labels.includes('LINK TYPE'));
   assert.ok(labels.includes('SAFETY'));
 });

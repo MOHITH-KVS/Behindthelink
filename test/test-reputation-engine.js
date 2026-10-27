@@ -97,6 +97,24 @@ async function runTests() {
   const redirectHit = await checkReputation("http://clean-shortener.test/xyz", "http://malware.test/payload.exe");
   assertEqual(redirectHit.status, "REPUTATION_CONFIRMED_THREAT", "Redirect destination threat detected");
 
+  // Fix 1: Malicious original URL redirecting to benign destination
+  const origThreatHit = await checkReputation("http://malware.test/payload.exe", "https://google.com");
+  assertEqual(origThreatHit.status, "REPUTATION_CONFIRMED_THREAT", "Malicious original URL with benign redirect destination matches threat");
+
+  // Fix 1: Unresolved redirect (destination is null/undefined)
+  const unresolvedHit = await checkReputation("http://malware.test/payload.exe", null);
+  assertEqual(unresolvedHit.status, "REPUTATION_CONFIRMED_THREAT", "Unresolved redirect matches original URL threat");
+
+  // Fix 1: Duplicate original and destination URLs
+  const dupHit = await checkReputation("http://malware.test/payload.exe", "http://malware.test/payload.exe");
+  assertEqual(dupHit.status, "REPUTATION_CONFIRMED_THREAT", "Duplicate original and destination URLs handled cleanly");
+
+  // Fix 2: Fresh installation default (no key in storage defaults to enabled)
+  mockStorage = {};
+  const freshInstallHit = await checkReputation("http://malware.test/payload.exe");
+  assertEqual(freshInstallHit.status, "REPUTATION_CONFIRMED_THREAT", "Fresh installation defaults to enabled");
+  mockStorage = { reputationEnabled: true };
+
   // Test 8: Hash-prefix collision resistance (CRITICAL)
   // Construct a collision: shares first 4 bytes (8 hex chars) with a threat, but differs in 28 bytes
   const threatBytes = await computeHash("malware.test/payload.exe");
@@ -141,6 +159,25 @@ async function runTests() {
   setDatabase({ formatVersion: "invalid" });
   const malformedResult = await checkReputation("http://malware.test/payload.exe");
   assertEqual(malformedResult.status, "REPUTATION_UNAVAILABLE", "Malformed database returns UNAVAILABLE");
+
+  // Fix 3: Startup race test — checkReputation awaits in-flight initialization
+  resetDatabase();
+  const bundledDbData = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/data/bundled-threat-db.json'), 'utf8'));
+  let loaderStarted = false;
+  localThreatDb.ensureInitialized(() => {
+    loaderStarted = true;
+    return new Promise(resolve => setTimeout(() => resolve(bundledDbData), 20));
+  });
+  // Immediate lookup while initialization is in progress must await and succeed
+  const startupRaceHit = await checkReputation("http://malware.test/payload.exe");
+  assertCondition(loaderStarted, "Loader was initiated");
+  assertEqual(startupRaceHit.status, "REPUTATION_CONFIRMED_THREAT", "Reputation check awaits in-flight initialization and succeeds");
+
+  // Fix 3: Genuine initialization failure returns REPUTATION_UNAVAILABLE
+  resetDatabase();
+  localThreatDb.ensureInitialized(() => Promise.reject(new Error("Simulated storage read failure")));
+  const startupFailRes = await checkReputation("http://malware.test/payload.exe");
+  assertEqual(startupFailRes.status, "REPUTATION_UNAVAILABLE", "Failed initialization explicitly reports REPUTATION_UNAVAILABLE");
 
   // Restore bundled database
   reloadBundledDb();
