@@ -168,6 +168,10 @@ async function runTestSuite() {
     const hitDefault = await reputationEngine.checkReputation("http://port-malware.test/drop.bin");
     assert.strictEqual(hitDefault.status, "REPUTATION_CONFIRMED_THREAT", "Port-stripped canonical expression matches");
 
+    // Explicit port :80 canonicalizes to same host/path
+    const hitPort80 = await reputationEngine.checkReputation("http://port-malware.test:80/drop.bin");
+    assert.strictEqual(hitPort80.status, "REPUTATION_CONFIRMED_THREAT", "Explicit port 80 canonical expression matches");
+
     // Different path on same host: MUST NOT MATCH
     const missPath = await reputationEngine.checkReputation("http://port-malware.test:8080/safe-page.html");
     assert.strictEqual(missPath.status, "REPUTATION_NO_MATCH", "Different path on host must not match");
@@ -297,12 +301,41 @@ async function runTestSuite() {
     assert.strictEqual(safetyResult.verdict, "KNOWN_THREAT");
     assert.strictEqual(safetyResult.reputationStatus, "KNOWN_THREAT");
     assert.strictEqual(safetyResult.status, "STRONG_WARNING");
+    assert.strictEqual(safetyResult.isFixture, true, "Safety result must flag isFixture as true");
 
     const repSignal = safetyResult.signals.find(s => s.id === "REPUTATION_CONFIRMED_THREAT");
     assert.ok(repSignal, "Must include REPUTATION_CONFIRMED_THREAT signal");
     assert.strictEqual(repSignal.isFixture, true, "Signal must indicate fixture status");
     assert.ok(repSignal.label.includes("Test fixture"), "Label must indicate test fixture");
     assert.ok(repSignal.detail.includes("Synthetic test fixture"), "Detail must clearly state synthetic test fixture");
+
+    assert.ok(safetyResult.userGuidance, "userGuidance must exist");
+    assert.ok(safetyResult.userGuidance.whyText.includes("Synthetic test fixture"), "whyText must indicate synthetic test fixture");
+    assert.ok(safetyResult.userGuidance.actionText.includes("Test fixture match"), "actionText must indicate test fixture match");
+
+    // Non-fixture threat must NOT include fixture disclaimers
+    const nonFixtureRep = {
+      status: "REPUTATION_CONFIRMED_THREAT",
+      threatTypes: ["MALWARE"],
+      isFixture: false
+    };
+    const nonFixtureSafety = computeEvidence(
+      "http://malware.test/payload.exe",
+      { isShortened: false, isHttps: false, hostname: "malware.test" },
+      { signals: [] },
+      null,
+      null,
+      { status: "NO_REDIRECT_OBSERVED" },
+      null,
+      nonFixtureRep,
+      null
+    );
+    assert.strictEqual(nonFixtureSafety.isFixture, false);
+    const nonFixSignal = nonFixtureSafety.signals.find(s => s.id === "REPUTATION_CONFIRMED_THREAT");
+    assert.strictEqual(nonFixSignal.isFixture, false);
+    assert.strictEqual(nonFixSignal.label, "Known threat detected");
+    assert.ok(nonFixtureSafety.userGuidance.whyText.includes("flagged as a known threat"));
+    assert.ok(!nonFixtureSafety.userGuidance.whyText.includes("fixture"));
   });
 
   // Test 14: Zero-network invariant verification

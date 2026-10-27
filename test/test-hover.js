@@ -63,6 +63,8 @@ const sandbox = {
       show: () => { sandbox.cardVisible = true; },
       hide: () => { sandbox.cardVisible = false; },
       updateNetworkResult: () => {},
+      setReputationLoading: () => {},
+      updateReputationResult: () => {},
       getHost: () => sandbox.hostElement
     }
   },

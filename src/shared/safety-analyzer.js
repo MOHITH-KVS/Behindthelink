@@ -549,13 +549,14 @@
     var totalDimensions = Object.keys(technicalDimensions).length + Object.keys(brandDimensions).length + Object.keys(contextDimensions).length;
     var localStatus;
     var reputationStatus = 'REPUTATION_NOT_ENABLED';
+    var isFixture = false;
     
     // --- STEP 4.5: Check Reputation (Tier D) ---
     if (reputationSignals) {
       if (reputationSignals.status === 'REPUTATION_CONFIRMED_THREAT') {
         reputationStatus = 'KNOWN_THREAT';
         var threatTypesStr = reputationSignals.threatTypes ? reputationSignals.threatTypes.join(', ') : 'malicious';
-        var isFixture = !!reputationSignals.isFixture;
+        isFixture = !!reputationSignals.isFixture;
         tierD.push({
           id: 'REPUTATION_CONFIRMED_THREAT',
           tier: 'D',
@@ -641,6 +642,7 @@
       localStatus: localStatus,
       verdict: verdict,
       reputationStatus: reputationStatus,
+      isFixture: isFixture,
       signals: allSignals,
       userGuidance: userGuidance,
       assessmentBasis: assessmentBasis,

@@ -273,6 +273,23 @@ runTest("UX-010: Phase 4A Known Threat suppresses redundant local status", () =>
   // KNOWN_THREAT overrides the local status in the UI completely to avoid clutter
   assert.strictEqual(statuses.length, 1);
   assert.ok(statuses[0].includes('Known threat reported'));
+  assert.ok(!statuses[0].includes('Test fixture'));
+});
+
+runTest("UX-010B: Phase 2A Test Fixture distinguishes synthetic fixture from live threat in UI", () => {
+  const card = getCard({
+    originalUrl: 'http://malware.test/payload.exe',
+    safetyEvidence: { 
+      status: 'STRONG_WARNING',
+      localStatus: 'UNUSUAL_CHARACTERISTICS',
+      reputationStatus: 'KNOWN_THREAT',
+      isFixture: true
+    }
+  });
+  
+  const statuses = findElementsByClass(card, 'btl-safety-status').map(e => e.textContent);
+  assert.strictEqual(statuses.length, 1);
+  assert.ok(statuses[0].includes('Known threat reported (Test fixture)'));
 });
 
 runTest("UX-011: Direct URL + brand mismatch is NOT a redirecting link", () => {

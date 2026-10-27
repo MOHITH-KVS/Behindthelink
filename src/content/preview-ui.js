@@ -252,7 +252,8 @@
       switch (safety.reputationStatus) {
         case 'KNOWN_THREAT':
           repIcon.textContent = '🚨'; repIcon.style.color = '#dc2626';
-          repText.textContent = 'Known threat reported'; repText.style.color = '#dc2626';
+          repText.textContent = safety.isFixture ? 'Known threat reported (Test fixture)' : 'Known threat reported';
+          repText.style.color = '#dc2626';
           break;
         case 'NO_KNOWN_THREAT':
           repIcon.textContent = '✓'; repIcon.style.color = '#10b981';
@@ -290,7 +291,8 @@
       case 'KNOWN_THREAT':
       case 'STRONG_WARNING':
         sIcon.textContent = '🚨'; sIcon.style.color = '#dc2626';
-        sText.textContent = 'Known threat reported'; sText.style.color = '#dc2626';
+        sText.textContent = safety.isFixture ? 'Known threat reported (Test fixture)' : 'Known threat reported';
+        sText.style.color = '#dc2626';
         break;
       case 'UNUSUAL_CHARACTERISTICS':
         sIcon.textContent = '⚠'; sIcon.style.color = '#d97706';

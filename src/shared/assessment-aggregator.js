@@ -120,6 +120,11 @@
     }
 
     if (hasThreat) {
+      for (var t = 0; t < signals.length; t++) {
+        if (signals[t].id === 'REPUTATION_CONFIRMED_THREAT' && signals[t].isFixture) {
+          return "This destination has been flagged by the local test fixture dataset. Note: Synthetic test fixture, not live threat intelligence.";
+        }
+      }
       return "This destination has been flagged as a known threat.";
     }
 
@@ -220,6 +225,11 @@
     }
 
     if (hasThreat) {
+      for (var at = 0; at < signals.length; at++) {
+        if (signals[at].id === 'REPUTATION_CONFIRMED_THREAT' && signals[at].isFixture) {
+          return "Test fixture match: safe test URL flagged for offline testing.";
+        }
+      }
       return "Do not visit this destination or provide any information.";
     }
 
