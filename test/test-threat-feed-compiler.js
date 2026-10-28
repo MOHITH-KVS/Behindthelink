@@ -108,8 +108,9 @@ async function runCompilerTestSuite() {
     assert.strictEqual(commentRows.length, 3);
   });
 
-  // Test 5: Category normalization
-  test("5. Category normalization: maps realistic threat strings to supported categories", () => {
+  // Test 5: Category normalization & exact tag matching (no substring collisions)
+  test("5. Category normalization: maps realistic threat strings and prevents substring collisions", () => {
+    // Valid categories
     assert.strictEqual(normalizeThreatCategory('malware_download'), 'MALWARE');
     assert.strictEqual(normalizeThreatCategory('trojan'), 'MALWARE');
     assert.strictEqual(normalizeThreatCategory('botnet_c2'), 'MALWARE');
@@ -124,21 +125,61 @@ async function runCompilerTestSuite() {
     assert.strictEqual(normalizeThreatCategory('pup_installer'), 'UNWANTED_SOFTWARE');
     assert.strictEqual(normalizeThreatCategory('pua'), 'UNWANTED_SOFTWARE');
 
-    // Tag fallback
+    // Discrete tag tokens
     assert.strictEqual(normalizeThreatCategory('download', 'redline_stealer'), 'MALWARE');
     assert.strictEqual(normalizeThreatCategory('landing_page', 'phishing_kit'), 'SOCIAL_ENGINEERING');
+    assert.strictEqual(normalizeThreatCategory('installer', 'pup'), 'UNWANTED_SOFTWARE');
+    assert.strictEqual(normalizeThreatCategory('payload', 'rat'), 'MALWARE');
 
-    // Unsupported
+    // Fix 3: Substring collision prevention
+    // 'popup' must NOT match 'pup'
+    assert.strictEqual(normalizeThreatCategory('unknown_category', 'popup'), null);
+    // 'corporate', 'accurate', 'pirated' must NOT match 'rat'
+    assert.strictEqual(normalizeThreatCategory('unknown_category', 'corporate'), null);
+    assert.strictEqual(normalizeThreatCategory('unknown_category', 'accurate'), null);
+    assert.strictEqual(normalizeThreatCategory('unknown_category', 'pirated'), null);
+    assert.strictEqual(normalizeThreatCategory('unknown_category', 'operating_system'), null);
+
+    // Legitimate trojan with 'popup' tag must remain MALWARE, not UNWANTED_SOFTWARE
+    assert.strictEqual(normalizeThreatCategory('trojan', 'popup'), 'MALWARE');
+
+    // Unsupported and empty
     assert.strictEqual(normalizeThreatCategory('unknown_noise_xyz'), null);
     assert.strictEqual(normalizeThreatCategory('benign_page'), null);
+    assert.strictEqual(normalizeThreatCategory('', ''), null);
   });
 
-  // Test 6: URL format validation
-  test("6. URL format validation: accepts valid HTTP(S) and rejects malformed strings", () => {
+  // Test 6: URL format validation with IPv6 support
+  test("6. URL format validation: accepts valid HTTP(S), IPv4, and IPv6 literals while rejecting malformed inputs", () => {
+    // Standard domain names
     assert.strictEqual(isValidThreatUrl('http://malware.test/payload.exe'), true);
     assert.strictEqual(isValidThreatUrl('https://malware.test/gate.php?aff=1'), true);
-    assert.strictEqual(isValidThreatUrl('http://192.168.1.100:8080/drop.bin'), true);
 
+    // Localhost
+    assert.strictEqual(isValidThreatUrl('http://localhost/path'), true);
+    assert.strictEqual(isValidThreatUrl('http://localhost:8080/test'), true);
+
+    // IPv4 addresses
+    assert.strictEqual(isValidThreatUrl('http://192.168.1.100:8080/drop.bin'), true);
+    assert.strictEqual(isValidThreatUrl('https://10.0.0.1/malware'), true);
+
+    // Fix 2: Valid IPv6 addresses
+    assert.strictEqual(isValidThreatUrl('http://[::1]/'), true);
+    assert.strictEqual(isValidThreatUrl('http://[2001:db8::1]/payload.exe'), true);
+    assert.strictEqual(isValidThreatUrl('https://[2001:db8::1]:8080/path?q=1'), true);
+    assert.strictEqual(isValidThreatUrl('http://[2001:0db8:85a3:0000:0000:8a2e:0370:7334]/'), true);
+
+    // Fix 2: Malformed IPv6 addresses
+    assert.strictEqual(isValidThreatUrl('http://[invalid_ipv6]/path'), false);
+    assert.strictEqual(isValidThreatUrl('http://[12345::1]/path'), false);
+    assert.strictEqual(isValidThreatUrl('http://[:::1]/path'), false);
+
+    // Fix 2: Invalid bracket syntax
+    assert.strictEqual(isValidThreatUrl('http://[2001:db8::1/path'), false);
+    assert.strictEqual(isValidThreatUrl('http://[2001:db8::1]]:80/path'), false);
+    assert.strictEqual(isValidThreatUrl('http://[[2001:db8::1]]/path'), false);
+
+    // Non-HTTP and invalid strings
     assert.strictEqual(isValidThreatUrl(''), false);
     assert.strictEqual(isValidThreatUrl('not_a_url_at_all'), false);
     assert.strictEqual(isValidThreatUrl('ftp://unsupported-scheme.test/file'), false);
@@ -168,7 +209,7 @@ async function runCompilerTestSuite() {
     const testJsonPath = path.join(scratchDir, 'test-compiled-output.json');
     fs.writeFileSync(testCsvPath, fixtureContent, 'utf8');
 
-    const result = await buildThreatFeed(testCsvPath, testJsonPath, { quiet: true });
+    const result = await buildThreatFeed(testCsvPath, testJsonPath, { mode: 'fixture', quiet: true });
 
     // Validate summary metrics
     const summary = result.summary;
@@ -210,8 +251,8 @@ async function runCompilerTestSuite() {
     const out1 = path.join(scratchDir, 'det-out-1.json');
     const out2 = path.join(scratchDir, 'det-out-2.json');
 
-    const res1 = await buildThreatFeed(fixtureCsv, out1, { quiet: true });
-    const res2 = await buildThreatFeed(fixtureCsv, out2, { quiet: true });
+    const res1 = await buildThreatFeed(fixtureCsv, out1, { mode: 'fixture', quiet: true });
+    const res2 = await buildThreatFeed(fixtureCsv, out2, { mode: 'fixture', quiet: true });
 
     const hashes1 = Object.keys(res1.hashes);
     const hashes2 = Object.keys(res2.hashes);
@@ -244,6 +285,111 @@ async function runCompilerTestSuite() {
       runtimeHashes.push(toHex(await computeHash(expr)));
     }
     assert.ok(runtimeHashes.includes(buildHash), "Runtime hash list must contain exact build hash");
+  });
+
+  // Test 10: Fix 1.5 — Missing or invalid build mode throws closed error
+  await asyncTest("10. Fix 1.5: Missing or invalid build mode fails closed", async () => {
+    const scratchDir = path.join(__dirname, '../scratch');
+    const fixtureCsv = path.join(__dirname, '../data/fixtures/sample-threat-fixtures.csv');
+    const dummyOut = path.join(scratchDir, 'dummy-out.json');
+
+    // Missing options
+    await assert.rejects(
+      async () => await buildThreatFeed(fixtureCsv, dummyOut),
+      /Build mode must be explicitly specified/
+    );
+
+    // Missing mode in options
+    await assert.rejects(
+      async () => await buildThreatFeed(fixtureCsv, dummyOut, { quiet: true }),
+      /Build mode must be explicitly specified/
+    );
+
+    // Invalid mode
+    await assert.rejects(
+      async () => await buildThreatFeed(fixtureCsv, dummyOut, { mode: 'arbitrary_mode' }),
+      /Invalid build mode/
+    );
+  });
+
+  // Test 11: Fix 1.1 — Fixture build containing synthetic records
+  await asyncTest("11. Fix 1.1: Fixture build produces isFixture: true and OFFLINE_SYNTHETIC_FIXTURE source", async () => {
+    const scratchDir = path.join(__dirname, '../scratch');
+    const fixtureCsv = path.join(__dirname, '../data/fixtures/sample-threat-fixtures.csv');
+    const out = path.join(scratchDir, 'fix-1-1.json');
+
+    const result = await buildThreatFeed(fixtureCsv, out, { mode: 'fixture', quiet: true });
+    assert.strictEqual(result.isFixture, true);
+    assert.strictEqual(result.source, 'OFFLINE_SYNTHETIC_FIXTURE');
+    assert.ok(result.description.includes('offline test fixture dataset'));
+
+    if (fs.existsSync(out)) fs.unlinkSync(out);
+  });
+
+  // Test 12: Fix 1.2 — Production build containing ordinary records
+  await asyncTest("12. Fix 1.2: Production build produces isFixture: false and URLHAUS_DATASET source", async () => {
+    const scratchDir = path.join(__dirname, '../scratch');
+    const prodCsv = path.join(scratchDir, 'prod-ordinary.csv');
+    const out = path.join(scratchDir, 'fix-1-2.json');
+
+    const content = [
+      '# URLhaus Export',
+      '# Fields: id,dateadded,url,url_status,last_online,threat,tags,urlhaus_link,reporter',
+      '1,2026-10-28,http://malicious-active-site.com/payload.exe,online,2026-10-28,malware_download,exe,link,rep'
+    ].join('\n');
+    fs.writeFileSync(prodCsv, content, 'utf8');
+
+    const result = await buildThreatFeed(prodCsv, out, { mode: 'production', quiet: true });
+    assert.strictEqual(result.isFixture, false);
+    assert.strictEqual(result.source, 'URLHAUS_DATASET');
+    assert.ok(result.description.includes('URLhaus verified malware indicators'));
+
+    if (fs.existsSync(prodCsv)) fs.unlinkSync(prodCsv);
+    if (fs.existsSync(out)) fs.unlinkSync(out);
+  });
+
+  // Test 13: Fix 1.3 — Production build containing a reserved-domain record remains production
+  await asyncTest("13. Fix 1.3: Production build containing a reserved domain remains production (never inverts)", async () => {
+    const scratchDir = path.join(__dirname, '../scratch');
+    const mixedCsv = path.join(scratchDir, 'prod-with-reserved.csv');
+    const out = path.join(scratchDir, 'fix-1-3.json');
+
+    // Contains 1 ordinary record and 1 record targeting .test
+    const content = [
+      '# URLhaus Export with single test domain submitted',
+      '# Fields: id,dateadded,url,url_status,last_online,threat,tags,urlhaus_link,reporter',
+      '1,2026-10-28,http://live-c2-server.org/bot.exe,online,2026-10-28,malware_download,exe,link,rep',
+      '2,2026-10-28,http://malware-sample.test/bin.exe,online,2026-10-28,malware_download,exe,link,rep'
+    ].join('\n');
+    fs.writeFileSync(mixedCsv, content, 'utf8');
+
+    const result = await buildThreatFeed(mixedCsv, out, { mode: 'production', quiet: true });
+    assert.strictEqual(result.isFixture, false, "Production build must NOT flip to isFixture: true due to one reserved domain");
+    assert.strictEqual(result.source, 'URLHAUS_DATASET');
+
+    if (fs.existsSync(mixedCsv)) fs.unlinkSync(mixedCsv);
+    if (fs.existsSync(out)) fs.unlinkSync(out);
+  });
+
+  // Test 14: Fix 1.4 — Production feed whose comment contains "fixture" remains production
+  await asyncTest("14. Fix 1.4: Production feed with 'fixture' in comment remains production", async () => {
+    const scratchDir = path.join(__dirname, '../scratch');
+    const commentCsv = path.join(scratchDir, 'prod-comment-fixture.csv');
+    const out = path.join(scratchDir, 'fix-1-4.json');
+
+    const content = [
+      '# URLhaus Feed - Notes: Automated fixture pipeline run',
+      '# Fields: id,dateadded,url,url_status,last_online,threat,tags,urlhaus_link,reporter',
+      '1,2026-10-28,http://real-active-threat.net/trojan.exe,online,2026-10-28,malware_download,exe,link,rep'
+    ].join('\n');
+    fs.writeFileSync(commentCsv, content, 'utf8');
+
+    const result = await buildThreatFeed(commentCsv, out, { mode: 'production', quiet: true });
+    assert.strictEqual(result.isFixture, false, "Production build must NOT flip to isFixture: true due to comment containing 'fixture'");
+    assert.strictEqual(result.source, 'URLHAUS_DATASET');
+
+    if (fs.existsSync(commentCsv)) fs.unlinkSync(commentCsv);
+    if (fs.existsSync(out)) fs.unlinkSync(out);
   });
 
   console.log(`\nThreat Feed Compiler Results: ${passed}/${total} passed`);

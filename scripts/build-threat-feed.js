@@ -19,6 +19,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const net = require('net');
 const { parseAndCanonicalize } = require('../src/shared/reputation/canonicalization.js');
 const { computeHash, toHex } = require('../src/shared/reputation/hash-utils.js');
 
@@ -158,56 +159,59 @@ function parseCsvLine(line) {
  * - MALWARE
  * - SOCIAL_ENGINEERING
  * - UNWANTED_SOFTWARE
+ *
+ * Uses word boundaries and normalized tokens to prevent substring collisions
+ * (e.g. 'popup' does NOT match 'pup', 'corporate' or 'accurate' do NOT match 'rat').
  * Returns null if the category is unsupported.
  */
 function normalizeThreatCategory(rawThreat, rawTags = '') {
-  const threatStr = (rawThreat || '').toLowerCase().trim();
-  const tagsStr = (rawTags || '').toLowerCase().trim();
-  const combined = threatStr + ' ' + tagsStr;
+  const combined = ((rawThreat || '') + ' ' + (rawTags || '')).toLowerCase();
+  // Normalize hyphens and underscores to spaces for consistent word boundary matching
+  const text = combined.replace(/[_\-]+/g, ' ');
 
   // 1. Phishing / Social Engineering
   if (
-    combined.includes('phish') ||
-    combined.includes('credential') ||
-    combined.includes('social_engineering') ||
-    combined.includes('scam') ||
-    combined.includes('spoof')
+    /\bphish/i.test(text) ||
+    /\bcredential/i.test(text) ||
+    /\bsocial engineering\b/i.test(text) ||
+    /\bscam/i.test(text) ||
+    /\bspoof/i.test(text) ||
+    /\bfraud/i.test(text)
   ) {
     return 'SOCIAL_ENGINEERING';
   }
 
   // 2. Unwanted Software / Adware / PUP
   if (
-    combined.includes('adware') ||
-    combined.includes('pup') ||
-    combined.includes('pua') ||
-    combined.includes('unwanted') ||
-    combined.includes('riskware') ||
-    combined.includes('spyware') ||
-    combined.includes('bundle')
+    /\badware\b/i.test(text) ||
+    /\b(pup|pua)\b/i.test(text) ||
+    /\bunwanted\b/i.test(text) ||
+    /\briskware\b/i.test(text) ||
+    /\bspyware\b/i.test(text) ||
+    /\bbundle(r)?\b/i.test(text)
   ) {
     return 'UNWANTED_SOFTWARE';
   }
 
   // 3. Malware (executables, trojans, C2, botnets, downloaders, etc.)
   if (
-    combined.includes('malware') ||
-    combined.includes('trojan') ||
-    combined.includes('botnet') ||
-    combined.includes('c2') ||
-    combined.includes('ransomware') ||
-    combined.includes('backdoor') ||
-    combined.includes('stealer') ||
-    combined.includes('miner') ||
-    combined.includes('dropper') ||
-    combined.includes('virus') ||
-    combined.includes('rootkit') ||
-    combined.includes('infostealer') ||
-    combined.includes('exploit') ||
-    combined.includes('rat') ||
-    combined.includes('worm') ||
-    combined.includes('loader') ||
-    combined.includes('payload')
+    /\bmalware\b/i.test(text) ||
+    /\btrojan/i.test(text) ||
+    /\bbotnet\b/i.test(text) ||
+    /\bc2\b/i.test(text) ||
+    /\bransomware\b/i.test(text) ||
+    /\bbackdoor\b/i.test(text) ||
+    /\b(info)?stealer\b/i.test(text) ||
+    /\b(crypto)?miner\b/i.test(text) ||
+    /\bdropper\b/i.test(text) ||
+    /\bvirus\b/i.test(text) ||
+    /\brootkit\b/i.test(text) ||
+    /\bexploit\b/i.test(text) ||
+    /\brat\b/i.test(text) ||
+    /\bremote access trojan\b/i.test(text) ||
+    /\bworm\b/i.test(text) ||
+    /\b(down)?loader\b/i.test(text) ||
+    /\bpayload\b/i.test(text)
   ) {
     return 'MALWARE';
   }
@@ -217,6 +221,7 @@ function normalizeThreatCategory(rawThreat, rawTags = '') {
 
 /**
  * Validates that a candidate string is a parseable HTTP(S) URL.
+ * Supports domain names, localhost, IPv4 addresses, and valid bracketed IPv6 literals.
  */
 function isValidThreatUrl(urlStr) {
   if (typeof urlStr !== 'string' || !urlStr.trim()) {
@@ -233,10 +238,38 @@ function isValidThreatUrl(urlStr) {
     if (!host || host.length < 3) {
       return false;
     }
-    // Hostname must contain at least one dot or be localhost / valid IP
-    if (!host.includes('.') && host !== 'localhost') {
+
+    // 1. IPv6 bracketed literal validation
+    if (host.startsWith('[') && host.endsWith(']')) {
+      const rawIp = host.slice(1, -1);
+      // Ensure no nested or unbalanced brackets inside literal
+      if (rawIp.includes('[') || rawIp.includes(']')) {
+        return false;
+      }
+      // Strict IPv6 address verification
+      if (!net.isIPv6(rawIp)) {
+        return false;
+      }
+    } else if (host === 'localhost') {
+      // Valid localhost
+    } else if (host.includes('.')) {
+      // Dotted host: IPv4 or domain name
+      const labels = host.split('.');
+      if (labels.some(l => l.length === 0)) {
+        return false;
+      }
+      if (net.isIPv4(host)) {
+        // Valid IPv4
+      } else {
+        // Valid domain hostname format
+        if (!/^[a-z0-9_.-]+$/i.test(host)) {
+          return false;
+        }
+      }
+    } else {
       return false;
     }
+
     const canonical = parseAndCanonicalize(trimmed);
     if (!canonical || !canonical.host) {
       return false;
@@ -248,10 +281,10 @@ function isValidThreatUrl(urlStr) {
 }
 
 /**
- * Inspects content comments and records to determine if dataset is a synthetic fixture.
+ * Helper to inspect records for synthetic/reserved test domains.
  */
-function isSyntheticFixture(content, records) {
-  const lowerContent = content.toLowerCase();
+function isSyntheticFixture(content, records = []) {
+  const lowerContent = (content || '').toLowerCase();
   if (
     lowerContent.includes('# fixture') ||
     lowerContent.includes('# synthetic') ||
@@ -326,6 +359,15 @@ function resolveColumnIndices(rows) {
 }
 
 async function buildThreatFeed(inputPath, outputPath, options = {}) {
+  if (!options || typeof options !== 'object' || !options.mode) {
+    throw new Error("Build mode must be explicitly specified as 'fixture' or 'production'");
+  }
+  const mode = String(options.mode).toLowerCase().trim();
+  if (mode !== 'fixture' && mode !== 'production') {
+    throw new Error(`Invalid build mode: '${options.mode}'. Must be 'fixture' or 'production'`);
+  }
+  const isFixture = (mode === 'fixture');
+
   if (!fs.existsSync(inputPath)) {
     throw new Error(`Input file does not exist: ${inputPath}`);
   }
@@ -409,8 +451,6 @@ async function buildThreatFeed(inputPath, outputPath, options = {}) {
     threatEntries.push({ url: rawUrl, threatType });
     summary.acceptedRecords++;
   }
-
-  const isFixture = isSyntheticFixture(content, threatEntries);
 
   // Generate canonical expressions and SHA-256 hashes
   const hashesMap = new Map();
@@ -499,6 +539,7 @@ function parseArgs() {
   const options = {
     input: DEFAULT_INPUT,
     output: DEFAULT_OUTPUT,
+    mode: null,
     download: false,
     quiet: false
   };
@@ -508,6 +549,12 @@ function parseArgs() {
       options.input = path.resolve(args[++i]);
     } else if (args[i] === '--output' && args[i + 1]) {
       options.output = path.resolve(args[++i]);
+    } else if (args[i] === '--mode' && args[i + 1]) {
+      options.mode = args[++i];
+    } else if (args[i] === '--fixture') {
+      options.mode = 'fixture';
+    } else if (args[i] === '--production') {
+      options.mode = 'production';
     } else if (args[i] === '--download') {
       options.download = true;
     } else if (args[i] === '--quiet') {
@@ -526,8 +573,13 @@ if (require.main === module) {
     process.exit(1);
   }
 
+  if (!options.mode) {
+    console.error(`[ERROR] Build mode must be explicitly specified using --mode fixture or --mode production (or --fixture / --production).`);
+    process.exit(1);
+  }
+
   buildThreatFeed(options.input, options.output, options).catch(err => {
-    console.error(`[FATAL] Threat compilation failed:`, err);
+    console.error(`[FATAL] Threat compilation failed:`, err.message);
     process.exit(1);
   });
 }

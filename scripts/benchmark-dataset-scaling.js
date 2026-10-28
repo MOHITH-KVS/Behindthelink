@@ -77,7 +77,7 @@ async function runBenchmark() {
 
     // 1. Measure Compilation Time
     const buildStart = performance.now();
-    const compiledDb = await buildThreatFeed(csvPath, jsonPath, { quiet: true });
+    const compiledDb = await buildThreatFeed(csvPath, jsonPath, { mode: 'fixture', quiet: true });
     const buildDurationMs = performance.now() - buildStart;
 
     const jsonSizeBytes = fs.statSync(jsonPath).size;

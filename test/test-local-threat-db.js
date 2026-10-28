@@ -101,7 +101,7 @@ async function runTestSuite() {
     const fixtureCsv = path.join(__dirname, '../data/fixtures/sample-threat-fixtures.csv');
     const tempOutput = path.join(__dirname, '../scratch/temp-compiled-db.json');
     
-    const compiled = await buildThreatFeed(fixtureCsv, tempOutput);
+    const compiled = await buildThreatFeed(fixtureCsv, tempOutput, { mode: 'fixture', quiet: true });
     assert.strictEqual(compiled.uniqueHashCount, 5, "Fixture must produce expected exact threat records");
     
     // Clean up scratch file
@@ -510,6 +510,147 @@ async function runTestSuite() {
     nextSessionToggle.checked = true;
     global.chrome.storage.local.set({ reputationEnabled: nextSessionToggle.checked });
     assert.strictEqual(mockStorage.reputationEnabled, true, "Toggling on updates chrome.storage.local to true");
+  });
+
+  // Test 21: Fix 4 — Database schema metadata validation
+  test("21. Fix 4: Database schema metadata validation rejects missing/invalid isFixture or source", () => {
+    localThreatDb.resetDatabase();
+
+    // Missing isFixture
+    const noFixtureFlag = {
+      formatVersion: 1,
+      source: 'OFFLINE_SYNTHETIC_FIXTURE',
+      hashes: {}
+    };
+    assert.strictEqual(localThreatDb.loadDatabase(noFixtureFlag), false, "Missing isFixture must be rejected");
+
+    // Non-boolean isFixture
+    const stringFixtureFlag = {
+      formatVersion: 1,
+      source: 'OFFLINE_SYNTHETIC_FIXTURE',
+      isFixture: "true",
+      hashes: {}
+    };
+    assert.strictEqual(localThreatDb.loadDatabase(stringFixtureFlag), false, "String isFixture must be rejected");
+
+    // Missing source
+    const noSource = {
+      formatVersion: 1,
+      isFixture: true,
+      hashes: {}
+    };
+    assert.strictEqual(localThreatDb.loadDatabase(noSource), false, "Missing source must be rejected");
+
+    // Contradictory: isFixture true but source URLHAUS_DATASET
+    const contradictory1 = {
+      formatVersion: 1,
+      isFixture: true,
+      source: 'URLHAUS_DATASET',
+      hashes: {}
+    };
+    assert.strictEqual(localThreatDb.loadDatabase(contradictory1), false, "Contradictory fixture metadata must be rejected");
+
+    // Contradictory: isFixture false but source OFFLINE_SYNTHETIC_FIXTURE
+    const contradictory2 = {
+      formatVersion: 1,
+      isFixture: false,
+      source: 'OFFLINE_SYNTHETIC_FIXTURE',
+      hashes: {}
+    };
+    assert.strictEqual(localThreatDb.loadDatabase(contradictory2), false, "Contradictory production metadata must be rejected");
+
+    // Valid production metadata accepted
+    const validProd = {
+      formatVersion: 1,
+      isFixture: false,
+      source: 'URLHAUS_DATASET',
+      hashes: {}
+    };
+    assert.strictEqual(localThreatDb.loadDatabase(validProd), true, "Valid production metadata must be accepted");
+
+    // Valid fixture metadata accepted
+    const validFix = {
+      formatVersion: 1,
+      isFixture: true,
+      source: 'OFFLINE_SYNTHETIC_FIXTURE',
+      hashes: {}
+    };
+    assert.strictEqual(localThreatDb.loadDatabase(validFix), true, "Valid fixture metadata must be accepted");
+
+    // Reload bundled database for remaining tests
+    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/data/bundled-threat-db.json'), 'utf8'));
+    localThreatDb.loadDatabase(raw);
+  });
+
+  // Test 22: Fix 1.6 — Runtime UI labeling for fixture versus production records
+  await asyncTest("22. Fix 1.6: Runtime labeling accurately distinguishes fixture from production records", async () => {
+    // 1. Fixture database
+    const fixtureHash = "0000000000000000000000000000000000000000000000000000000000000001";
+    const fixtureDb = {
+      formatVersion: 1,
+      isFixture: true,
+      source: 'OFFLINE_SYNTHETIC_FIXTURE',
+      hashes: {
+        [fixtureHash]: { threatTypes: ['MALWARE'] }
+      }
+    };
+    localThreatDb.loadDatabase(fixtureDb);
+
+    const fixtureMatch = localThreatDb.lookupHash(fixtureHash);
+    assert.strictEqual(fixtureMatch.matched, true);
+    assert.strictEqual(fixtureMatch.isFixture, true, "Fixture lookup must report isFixture: true");
+
+    const fixtureSafety = global.BehindTheLink.safetyAnalyzer.computeSafetyEvidence(
+      "http://test-fixture.example/",
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      { status: 'REPUTATION_CONFIRMED_THREAT', threatTypes: ['MALWARE'], isFixture: true },
+      null
+    );
+    assert.strictEqual(fixtureSafety.isFixture, true);
+    const fixtureSignal = fixtureSafety.signals.find(s => s.id === 'REPUTATION_CONFIRMED_THREAT');
+    assert.ok(fixtureSignal.label.includes('(Test fixture)'), "Fixture signal label must indicate Test fixture");
+    assert.ok(fixtureSignal.detail.includes('Synthetic test fixture'), "Fixture signal detail must indicate Synthetic test fixture");
+
+    // 2. Production database
+    const prodHash = "0000000000000000000000000000000000000000000000000000000000000002";
+    const prodDb = {
+      formatVersion: 1,
+      isFixture: false,
+      source: 'URLHAUS_DATASET',
+      hashes: {
+        [prodHash]: { threatTypes: ['MALWARE'] }
+      }
+    };
+    localThreatDb.loadDatabase(prodDb);
+
+    const prodMatch = localThreatDb.lookupHash(prodHash);
+    assert.strictEqual(prodMatch.matched, true);
+    assert.strictEqual(prodMatch.isFixture, false, "Production lookup must report isFixture: false");
+
+    const prodSafety = global.BehindTheLink.safetyAnalyzer.computeSafetyEvidence(
+      "http://real-threat.example/",
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      { status: 'REPUTATION_CONFIRMED_THREAT', threatTypes: ['MALWARE'], isFixture: false },
+      null
+    );
+    assert.strictEqual(prodSafety.isFixture, false);
+    const prodSignal = prodSafety.signals.find(s => s.id === 'REPUTATION_CONFIRMED_THREAT');
+    assert.strictEqual(prodSignal.label, 'Known threat detected', "Production signal label must not have fixture tag");
+    assert.ok(!prodSignal.detail.includes('Synthetic test fixture'), "Production signal detail must not claim synthetic fixture");
+
+    // Restore bundled database
+    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/data/bundled-threat-db.json'), 'utf8'));
+    localThreatDb.loadDatabase(raw);
   });
 
   console.log(`\nLocal Threat DB Results: ${passed}/${total} passed`);

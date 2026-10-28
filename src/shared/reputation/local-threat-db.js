@@ -36,6 +36,19 @@
     if (!data.hashes || typeof data.hashes !== 'object' || Array.isArray(data.hashes)) {
       return { valid: false, reason: 'Missing or malformed hashes dictionary' };
     }
+    if (typeof data.isFixture !== 'boolean') {
+      return { valid: false, reason: 'Missing or invalid isFixture flag (must be boolean)' };
+    }
+    if (typeof data.source !== 'string' || !data.source.trim()) {
+      return { valid: false, reason: 'Missing or invalid database source identifier' };
+    }
+    // Validate source and fixture consistency
+    if (data.isFixture && data.source === 'URLHAUS_DATASET') {
+      return { valid: false, reason: 'Contradictory metadata: isFixture is true but source is URLHAUS_DATASET' };
+    }
+    if (!data.isFixture && data.source === 'OFFLINE_SYNTHETIC_FIXTURE') {
+      return { valid: false, reason: 'Contradictory metadata: isFixture is false but source is OFFLINE_SYNTHETIC_FIXTURE' };
+    }
     return { valid: true };
   }
 
