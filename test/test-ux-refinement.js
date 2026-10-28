@@ -340,7 +340,7 @@ runTest("UX-014: Disabled reputation renders non-spinning informational text", (
     }
   });
   const statuses = findElementsByClass(card, 'btl-safety-status').map(e => e.textContent);
-  assert.ok(statuses[0].includes('External reputation checking is not enabled'));
+  assert.ok(statuses[0].includes('Local threat intelligence is disabled'));
   assert.ok(!statuses[0].includes('Checking reputation'));
 });
 

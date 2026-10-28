@@ -164,7 +164,7 @@
           isResolved = true;
           BTL.previewUI.updateNetworkResult(response, analysisResult);
 
-          // External reputation checks are disabled in this release
+          // Skip deferred reputation lookup if local threat intelligence is disabled
           if (response.safetyEvidence && response.safetyEvidence.reputationStatus === 'REPUTATION_NOT_ENABLED') {
             return;
           }

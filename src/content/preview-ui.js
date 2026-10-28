@@ -265,7 +265,7 @@
           break;
         case 'REPUTATION_NOT_ENABLED':
           repIcon.textContent = '—'; repIcon.style.color = '#9ca3af';
-          repText.textContent = 'External reputation checking is not enabled.'; repText.style.color = '#6b7280';
+          repText.textContent = 'Local threat intelligence is disabled.'; repText.style.color = '#6b7280';
           break;
         case 'REPUTATION_UNAVAILABLE':
         case 'NO_REPUTATION_VERDICT':

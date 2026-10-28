@@ -2,8 +2,9 @@
   "formatVersion": 1,
   "source": "OFFLINE_SYNTHETIC_FIXTURE",
   "isFixture": true,
-  "description": "Deterministic offline test fixture dataset for BehindTheLink Phase 2A local threat matching. Contains synthetic safe test URLs only; not live URLhaus threat intelligence.",
-  "generatedAt": "2026-10-26T17:08:09.009Z",
+  "description": "Deterministic offline test fixture dataset for BehindTheLink Phase 2A/2B local threat matching. Contains synthetic safe test URLs only; not live URLhaus threat intelligence.",
+  "absenceDisclaimer": "Absence of a URL from this database does not guarantee safety. The database only contains records of known reported threats at the time of compilation.",
+  "generatedAt": "2026-10-28T16:36:01.957Z",
   "sourceUrlCount": 5,
   "uniqueHashCount": 5,
   "hashes": {
@@ -32,5 +33,15 @@
         "MALWARE"
       ]
     }
+  },
+  "summary": {
+    "totalRows": 5,
+    "acceptedRecords": 5,
+    "uniqueHashes": 5,
+    "duplicateRecords": 0,
+    "rejectedMalformedRow": 0,
+    "rejectedInvalidUrl": 0,
+    "rejectedStatusNotOnline": 0,
+    "rejectedUnsupportedThreat": 0
   }
 }
