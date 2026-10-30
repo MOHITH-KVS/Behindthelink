@@ -180,7 +180,7 @@ async function resolveDestination(originalUrlString, requestId, contextObj) {
   let networkEvidence = {
     status: 'FAILED',
     redirectTarget: null,
-    errorReason: 'UNCONFIRMED'
+    errorReason: null
   };
 
   if (!isValidHttpUrl(originalUrlString)) {
