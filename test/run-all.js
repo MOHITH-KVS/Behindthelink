@@ -6,10 +6,15 @@ const tests = [
   'test/test-canonicalization.js',
   'test/test-expression-generator.js',
   'test/test-reputation-engine.js',
+  'test/test-local-threat-db.js',
   'test/test-context-extractor.js',
   'test/test-claim-destination.js',
   'test/test-deception-analyzer.js',
-  'test/test-combined-assessment.js'
+  'test/test-combined-assessment.js',
+  'test/test-domain-utils.js',
+  'test/test-lookalike-analyzer.js',
+  'test/test-threat-feed-compiler.js',
+  'test/test-stage1-overhaul.js'
 ];
 
 let allPassed = true;
