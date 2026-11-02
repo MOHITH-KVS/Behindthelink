@@ -62,12 +62,12 @@
   async function checkReputation(targetUrl, redirectTarget) {
     const enabled = await isOptedIn();
     if (!enabled) {
-      return { status: 'REPUTATION_NOT_ENABLED' };
+      return { status: 'REPUTATION_NOT_ENABLED', isFixture: false, source: null };
     }
 
     const db = getActiveDb();
     if (!db) {
-      return { status: 'REPUTATION_UNAVAILABLE' };
+      return { status: 'REPUTATION_UNAVAILABLE', isFixture: false, source: null };
     }
 
     // Await database initialization if in progress or not ready
@@ -76,8 +76,12 @@
     }
 
     if (!db.isReady()) {
-      return { status: 'REPUTATION_UNAVAILABLE' };
+      return { status: 'REPUTATION_UNAVAILABLE', isFixture: false, source: null };
     }
+
+    const dbStatus = (typeof db.getStatus === 'function') ? db.getStatus() : null;
+    const isDbFixture = dbStatus ? !!dbStatus.isFixture : false;
+    const dbSource = dbStatus && dbStatus.source ? dbStatus.source : (isDbFixture ? 'OFFLINE_SYNTHETIC_FIXTURE' : 'URLHAUS_DATASET');
 
     const urlsToCheck = [];
     if (targetUrl && typeof targetUrl === 'string') {
@@ -101,11 +105,11 @@
 
     const uniqueExprs = Array.from(new Set(allExpressions));
     if (uniqueExprs.length === 0) {
-      return { status: 'REPUTATION_NO_MATCH' };
+      return { status: 'REPUTATION_NO_MATCH', isFixture: isDbFixture, source: dbSource };
     }
 
     const confirmedThreats = [];
-    let isFixture = false;
+    let isFixture = isDbFixture;
 
     for (const expr of uniqueExprs) {
       const hashBytes = await computeHash(expr);
@@ -114,7 +118,7 @@
       const match = db.lookupHash(hashHex);
       if (match === null) {
         // Database became unavailable during lookup
-        return { status: 'REPUTATION_UNAVAILABLE' };
+        return { status: 'REPUTATION_UNAVAILABLE', isFixture: isDbFixture, source: dbSource };
       }
 
       if (match && match.matched) {
@@ -128,8 +132,8 @@
           confirmedThreats.push('MALWARE');
         }
 
-        if (match.isFixture) {
-          isFixture = true;
+        if (match.isFixture !== undefined) {
+          isFixture = !!match.isFixture;
         }
       }
     }
@@ -138,11 +142,16 @@
       return {
         status: 'REPUTATION_CONFIRMED_THREAT',
         threatTypes: Array.from(new Set(confirmedThreats)),
-        isFixture: isFixture
+        isFixture: isFixture,
+        source: dbSource
       };
     }
 
-    return { status: 'REPUTATION_NO_MATCH' };
+    return {
+      status: 'REPUTATION_NO_MATCH',
+      isFixture: isDbFixture,
+      source: dbSource
+    };
   }
 
   return {

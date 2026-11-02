@@ -1,7 +1,7 @@
 /**
  * BehindTheLink — Safety Analyzer
  *
- * Implements the Phase 2B Core Safety Model.
+ * Implements the Core Safety & Evidence Model.
  * Computes safetyEvidence from local signals, network evidence, and browser observation.
  */
 (function () {
@@ -182,8 +182,6 @@
     // Exact match
     if (host1 === host2) return false;
 
-    // Simple e2LD extraction: get last two parts (e.g., 'example.com')
-    // Exception for IPs (regex match)
     var ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
     if (ipRegex.test(host1) || ipRegex.test(host2)) {
       return host1 !== host2;
@@ -192,7 +190,6 @@
     var parts1 = host1.split('.');
     var parts2 = host2.split('.');
     
-    // Fallback logic
     var e2ld1 = parts1.slice(-2).join('.');
     var e2ld2 = parts2.slice(-2).join('.');
     
@@ -200,7 +197,7 @@
   }
 
   /**
-   * Computes the final safetyEvidence object.
+   * Computes the final safetyEvidence object and standardized evidence model.
    */
   function computeSafetyEvidence(
     originalUrl,
@@ -221,7 +218,6 @@
       "Analysis based on URL structure — page content was not inspected",
       "Local heuristics cannot confirm safety or malicious intent"
     ];
-
 
     // --- STEP 1: Map ORIGINAL URL riskSignals to tiers ---
     if (riskSignals && riskSignals.signals) {
@@ -435,7 +431,7 @@
     var isShortener = localSignals && localSignals.isShortened;
     var shortenerNoResolve = isShortener && 
                               ((!networkEvidence || networkEvidence.status === 'FAILED') ||
-                               (networkEvidence && (networkEvidence.errorReason === 'DESTINATION_UNRESOLVED' || networkEvidence.errorReason === 'BLOCKED_INTERSTITIAL'))) && 
+                                (networkEvidence && (networkEvidence.errorReason === 'DESTINATION_UNRESOLVED' || networkEvidence.errorReason === 'BLOCKED_INTERSTITIAL'))) && 
                               (!browserObservation || browserObservation.status === 'NONE');
     
     var assessmentBasis;
@@ -553,10 +549,10 @@
     
     // --- STEP 4.5: Check Reputation (Tier D) ---
     if (reputationSignals) {
+      isFixture = !!reputationSignals.isFixture;
       if (reputationSignals.status === 'REPUTATION_CONFIRMED_THREAT') {
         reputationStatus = 'KNOWN_THREAT';
         var threatTypesStr = reputationSignals.threatTypes ? reputationSignals.threatTypes.join(', ') : 'malicious';
-        isFixture = !!reputationSignals.isFixture;
         tierD.push({
           id: 'REPUTATION_CONFIRMED_THREAT',
           tier: 'D',
@@ -604,7 +600,7 @@
       localStatus = 'INFORMATIONAL';
     }
 
-    // 5 Explicit Mutually Exclusive Verdicts
+    // Legacy 5 Explicit Mutually Exclusive Verdicts (Retained for backwards compatibility)
     var verdict;
     if (reputationStatus === 'KNOWN_THREAT') {
       verdict = 'KNOWN_THREAT';
@@ -615,7 +611,6 @@
     } else if (localStatus === 'CONTEXTUAL_CAUTION') {
       verdict = 'CONTEXTUAL_CAUTION';
     } else if (hasIndependentConcern) {
-      // Standalone lookalike or single structural Tier B without sensitive action
       verdict = 'UNUSUAL_CHARACTERISTICS';
     } else {
       verdict = 'NO_KNOWN_THREAT';
@@ -623,7 +618,394 @@
 
     var status = (reputationStatus === 'KNOWN_THREAT') ? 'STRONG_WARNING' : ((localStatus === 'CONTEXTUAL_CAUTION' || localStatus === 'INSPECTION_INCOMPLETE') ? localStatus : (localStatus === 'NO_SIGNALS_DETECTED' ? 'NO_SIGNALS_DETECTED' : localStatus));
 
-    // --- STEP 6: Assemble and return ---
+    // --- STEP 6: Assemble Standardized Phase 2 Evidence Model ---
+    var hasLookalike = tierC.some(function (s) {
+      return s.id === 'LOOKALIKE_DOMAIN_SIMILARITY' ||
+             s.id === 'BRAND_EMBEDDED_IN_UNRELATED_DOMAIN' ||
+             s.id === 'MISLEADING_SUBDOMAIN_STRUCTURE';
+    });
+    var hasPressure = tierC.some(function (s) {
+      return s.id === 'URGENT_LANGUAGE';
+    });
+    var hasSensitive = tierC.some(function (s) {
+      return s.id === 'ACCOUNT_ACTION' ||
+             s.id === 'PAYMENT_ACTION' ||
+             s.id === 'VERIFICATION_ACTION' ||
+             s.id === 'REWARD_OFFER_ACTION' ||
+             s.id === 'DELIVERY_ACTION' ||
+             s.id === 'JOB_ACTION';
+    });
+
+    // 1. Destination check
+    var resolvedTargetUrl = (networkEvidence && networkEvidence.redirectTarget) 
+      ? networkEvidence.redirectTarget 
+      : originalUrl;
+    var isRedirectObserved = !!(networkEvidence && networkEvidence.status === 'HTTP_REDIRECT_OBSERVED' && networkEvidence.redirectTarget);
+    var destObserved = {
+      originalUrl: originalUrl,
+      resolvedUrl: resolvedTargetUrl,
+      isRedirect: isRedirectObserved,
+      redirectCount: isRedirectObserved ? 1 : 0,
+      networkStatus: networkEvidence ? networkEvidence.status : 'NOT_CHECKED',
+      errorReason: networkEvidence ? networkEvidence.errorReason : null
+    };
+
+    var destCheck;
+    if (!networkEvidence || networkEvidence.status === 'NOT_CHECKED') {
+      destCheck = {
+        checkId: 'dest_routing_trace',
+        category: 'destination',
+        status: 'NOT_CHECKED',
+        source: 'network_inspection',
+        observedValue: destObserved,
+        explanation: 'Destination network routing has not been checked.',
+        checkedAt: Date.now(),
+        limitations: ['Network inspection not yet initiated or bypassed.']
+      };
+    } else if (isRedirectObserved) {
+      var origHost = getHostname(originalUrl);
+      var targetHost = getHostname(networkEvidence.redirectTarget);
+      destCheck = {
+        checkId: 'dest_routing_trace',
+        category: 'destination',
+        status: 'MATCH',
+        source: 'network_inspection',
+        observedValue: destObserved,
+        explanation: (origHost !== targetHost) 
+          ? 'Redirect observed from ' + origHost + ' to ' + targetHost + '.'
+          : 'Redirect observed to destination on same domain.',
+        checkedAt: Date.now(),
+        limitations: ['Verified routing headers only; page content and JavaScript were not executed.']
+      };
+    } else if (networkEvidence.status === 'NO_REDIRECT_OBSERVED') {
+      var isShort = localSignals && localSignals.isShortened;
+      destCheck = {
+        checkId: 'dest_routing_trace',
+        category: 'destination',
+        status: isShort ? 'WARNING' : 'NO_MATCH',
+        source: 'network_inspection',
+        observedValue: destObserved,
+        explanation: isShort
+          ? 'Shortened link did not return an HTTP redirect; destination remains unresolved.'
+          : 'Direct link; no HTTP redirects observed.',
+        checkedAt: Date.now(),
+        limitations: ['Verified routing headers only; page content was not inspected.']
+      };
+    } else { // FAILED
+      destCheck = {
+        checkId: 'dest_routing_trace',
+        category: 'destination',
+        status: 'UNAVAILABLE',
+        source: 'network_inspection',
+        observedValue: destObserved,
+        explanation: 'Destination resolution failed (' + (networkEvidence.errorReason || 'Network error') + ').',
+        checkedAt: Date.now(),
+        limitations: ['Destination could not be reached or connection was refused/timed out.']
+      };
+    }
+
+    // 2. Threat intelligence check
+    var threatCheck;
+    var isFixtureDb = reputationSignals ? (reputationSignals.isFixture !== undefined ? !!reputationSignals.isFixture : false) : false;
+    var repSrc = (reputationSignals && reputationSignals.source) 
+      ? reputationSignals.source 
+      : (isFixtureDb ? 'OFFLINE_SYNTHETIC_FIXTURE' : 'URLHAUS_DATASET');
+
+    if (!reputationSignals || reputationSignals.status === 'REPUTATION_NOT_ENABLED') {
+      threatCheck = {
+        checkId: 'threat_intel_exact',
+        category: 'threat_intelligence',
+        status: 'NOT_CHECKED',
+        source: 'local_threat_db',
+        observedValue: { status: 'REPUTATION_NOT_ENABLED', isFixture: isFixtureDb, source: repSrc },
+        explanation: 'Local threat intelligence is disabled.',
+        checkedAt: Date.now(),
+        limitations: ['Opt-in threat reputation check was not enabled.']
+      };
+    } else if (reputationSignals.status === 'REPUTATION_UNAVAILABLE' || reputationSignals.status === 'REPUTATION_PENDING') {
+      threatCheck = {
+        checkId: 'threat_intel_exact',
+        category: 'threat_intelligence',
+        status: 'UNAVAILABLE',
+        source: 'local_threat_db',
+        observedValue: { status: reputationSignals.status, isFixture: isFixtureDb, source: repSrc },
+        explanation: (reputationSignals.status === 'REPUTATION_PENDING')
+          ? 'Reputation check pending.'
+          : 'Local threat database is unavailable or failed to initialize.',
+        checkedAt: Date.now(),
+        limitations: ['Threat database lookup could not complete. Missing database must never be treated as clean.']
+      };
+    } else if (reputationSignals.status === 'REPUTATION_CONFIRMED_THREAT') {
+      var tTypes = reputationSignals.threatTypes || ['MALWARE'];
+      threatCheck = {
+        checkId: 'threat_intel_exact',
+        category: 'threat_intelligence',
+        status: 'MATCH',
+        source: isFixtureDb ? 'local_threat_db_synthetic_fixture' : 'local_threat_db_production',
+        observedValue: {
+          status: 'REPUTATION_CONFIRMED_THREAT',
+          threatTypes: tTypes,
+          isFixture: isFixtureDb,
+          source: repSrc
+        },
+        explanation: isFixtureDb
+          ? 'Flagged by synthetic test fixture dataset (' + tTypes.join(', ') + '). Note: Test fixture only, not real-world malware.'
+          : 'Confirmed threat match from verified threat intelligence (' + tTypes.join(', ') + ').',
+        checkedAt: Date.now(),
+        limitations: isFixtureDb
+          ? [
+              'Database contains synthetic test fixtures for offline development only.',
+              'Synthetic test fixture matches must NEVER establish a real-world MALICIOUS verdict.'
+            ]
+          : [
+              'Database contains compiled threat indicators reported at time of compilation.',
+              'Threat match cannot be downgraded by HTTPS, domain age or business registration.'
+            ]
+      };
+    } else { // REPUTATION_NO_MATCH
+      threatCheck = {
+        checkId: 'threat_intel_exact',
+        category: 'threat_intelligence',
+        status: 'NO_MATCH',
+        source: isFixtureDb ? 'local_threat_db_synthetic_fixture' : 'local_threat_db_production',
+        observedValue: {
+          status: 'REPUTATION_NO_MATCH',
+          threatTypes: [],
+          isFixture: isFixtureDb,
+          source: repSrc
+        },
+        explanation: isFixtureDb
+          ? 'No match in synthetic test fixture dataset.'
+          : 'No matching threat records found in verified threat intelligence.',
+        checkedAt: Date.now(),
+        limitations: isFixtureDb
+          ? [
+              'Database contains synthetic test fixtures only.',
+              'Synthetic fixture non-matches must NEVER establish NO_KNOWN_THREATS_FOUND.'
+            ]
+          : [
+              'Verified offline threat dataset checked.',
+              'No match does not guarantee the URL is safe.'
+            ]
+      };
+    }
+
+    // 3. Domain registration check
+    var domainCheck = {
+      checkId: 'domain_registration',
+      category: 'domain',
+      status: 'UNAVAILABLE',
+      source: 'rdap_whois_lookup',
+      observedValue: null,
+      explanation: 'Domain age and registration records were not queried.',
+      checkedAt: Date.now(),
+      limitations: [
+        'External WHOIS/RDAP requests are omitted to preserve privacy and avoid network dependencies.',
+        'Missing or unavailable domain registration information is never treated as a security threat.'
+      ]
+    };
+
+    // 4. Business identity check
+    var businessCheck = {
+      checkId: 'business_identity',
+      category: 'business_identity',
+      status: 'NOT_CHECKED',
+      source: 'corporate_registry',
+      observedValue: null,
+      explanation: 'Corporate registry records were not queried.',
+      checkedAt: Date.now(),
+      limitations: [
+        'No external corporate database was queried.',
+        'Company registration alone does not establish safety, and similar names are never proof of domain ownership.'
+      ]
+    };
+
+    // 5. Behavioral brand integrity check
+    var behavioralBrandCheck = {
+      checkId: 'behavioral_brand_integrity',
+      category: 'behavioral',
+      status: (hasMismatch || hasLookalike) ? 'WARNING' : 'NO_MATCH',
+      source: hasMismatch ? 'claim_destination_analyzer' : (hasLookalike ? 'lookalike_analyzer' : 'brand_registry'),
+      observedValue: {
+        hasMismatch: hasMismatch,
+        hasLookalike: hasLookalike
+      },
+      explanation: hasMismatch
+        ? 'Link mentions a brand, but verified destination is an unrelated domain.'
+        : (hasLookalike
+            ? 'Domain closely resembles a known brand without verified affiliation.'
+            : 'No brand impersonation or lookalike domain patterns detected.'),
+      checkedAt: Date.now(),
+      limitations: ['Evaluated using algorithmic string distance, homoglyph mapping, and brand claim heuristics.']
+    };
+
+    // 6. Behavioral context & pressure check
+    var behavioralContextCheck = {
+      checkId: 'behavioral_context_pressure',
+      category: 'behavioral',
+      status: (hasPressure || hasSensitive) ? 'WARNING' : 'NO_MATCH',
+      source: 'deception_analyzer',
+      observedValue: {
+        hasPressure: hasPressure,
+        hasSensitive: hasSensitive,
+        category: contextObj ? contextObj.category : null
+      },
+      explanation: (hasPressure && hasSensitive)
+        ? 'Link combines urgent language with sensitive account or payment actions.'
+        : (hasSensitive
+            ? 'Link involves account, sign-in, or payment context.'
+            : (hasPressure
+                ? 'Urgent language detected in surrounding link context.'
+                : 'No urgent or sensitive action patterns detected.')),
+      checkedAt: Date.now(),
+      limitations: ['Inferred from visible link text and surrounding page context.']
+    };
+
+    // 7. Behavioral URL structure check
+    var behavioralUrlCheck = {
+      checkId: 'behavioral_url_structure',
+      category: 'behavioral',
+      status: (tierB.length > 0) ? 'WARNING' : 'NO_MATCH',
+      source: 'url_analyzer',
+      observedValue: {
+        structuralSignals: tierB.map(function (s) { return s.id; })
+      },
+      explanation: (tierB.length > 0)
+        ? 'URL structure contains unusual characteristics (' + tierB.map(function (s) { return s.label; }).join(', ') + ').'
+        : 'URL structure is standard with no unusual characteristics.',
+      checkedAt: Date.now(),
+      limitations: ['Evaluated from URL syntactic structure only.']
+    };
+
+    var checks = [
+      destCheck,
+      threatCheck,
+      domainCheck,
+      businessCheck,
+      behavioralBrandCheck,
+      behavioralContextCheck,
+      behavioralUrlCheck
+    ];
+
+    // --- STEP 7: Determine Conceptual Evidence Verdict ---
+    var isProductionThreatMatch = (threatCheck.status === 'MATCH' && !threatCheck.observedValue.isFixture);
+    var isProductionThreatChecked = (threatCheck.status === 'NO_MATCH' && !threatCheck.observedValue.isFixture);
+
+    // Evaluate qualified SUSPICIOUS criteria
+    var hasQualifiedMismatch = hasMismatch;
+    var hasQualifiedLookalike = hasLookalike && (hasSensitive || hasPressure);
+    var hasStandaloneStrongLookalike = tierC.some(function (s) {
+      return (s.id === 'LOOKALIKE_DOMAIN_SIMILARITY' || s.id === 'MISLEADING_SUBDOMAIN_STRUCTURE') &&
+             s.metadata && (s.metadata.detectionType === 'HOMOGLYPH' || s.id === 'MISLEADING_SUBDOMAIN_STRUCTURE');
+    });
+    var hasSuspiciousDownload = tierB.some(function (s) { return s.id === 'SUSPICIOUS_FILE_EXT'; }) &&
+      (tierB.some(function (s) { return s.id === 'HTTP_NOT_HTTPS' || s.id === 'IP_HOST' || s.id === 'IP_HOST_V4'; }));
+
+    // Isolate weak signals: connection signals (HTTP + port) are correlated and do not qualify independently
+    var nonWeakTechnicalDimensions = {};
+    tierB.forEach(function (s) {
+      if (s.id !== 'HTTP_NOT_HTTPS' && s.id !== 'UNUSUAL_PORT' && s.id !== 'DEEP_SUBDOMAIN') {
+        if (s.dimension) nonWeakTechnicalDimensions[s.dimension] = true;
+      }
+    });
+    var nonWeakTechnicalCount = Object.keys(nonWeakTechnicalDimensions).length;
+    var brandDimensionCount = Object.keys(brandDimensions).length;
+    
+    var hasCorroboratedMultiDimension = (nonWeakTechnicalCount >= 2) || 
+                                       (nonWeakTechnicalCount >= 1 && (brandDimensionCount >= 1 || hasSensitive));
+
+    var isSuspiciousQualified = hasQualifiedMismatch ||
+                                hasQualifiedLookalike ||
+                                hasStandaloneStrongLookalike ||
+                                hasSuspiciousDownload ||
+                                hasCorroboratedMultiDimension;
+
+    var evidenceVerdict;
+
+    // RULE A: MALICIOUS
+    // Only a confirmed match from a genuine production threat-intelligence source can establish this verdict.
+    // A synthetic test fixture must NEVER establish a production MALICIOUS verdict.
+    // A confirmed production threat match cannot be downgraded by HTTPS, domain age or business registration.
+    if (isProductionThreatMatch) {
+      evidenceVerdict = 'MALICIOUS';
+    }
+    // RULE B: SUSPICIOUS
+    // Requires meaningful, independently corroborated risk evidence.
+    // Two correlated weak signals must not be treated as independent evidence.
+    // One weak signal must not independently produce this verdict.
+    else if (isSuspiciousQualified) {
+      evidenceVerdict = 'SUSPICIOUS';
+    }
+    // RULE C: UNVERIFIED
+    // Use when no genuine production threat source has completed successfully and there is insufficient independent evidence.
+    // Use when the relevant inspection cannot be completed.
+    // A synthetic fixture-only database result must remain unverified.
+    // An unavailable threat database must not be interpreted as a clean result.
+    else if (isInspectionIncomplete || isFixtureDb || threatCheck.status === 'UNAVAILABLE' || threatCheck.status === 'NOT_CHECKED') {
+      evidenceVerdict = 'UNVERIFIED';
+    }
+    // RULE D: NO_KNOWN_THREATS_FOUND
+    // Only use when at least one genuine production threat-intelligence source was successfully checked
+    // and returned no match, with no qualifying suspicious or malicious evidence.
+    else if (isProductionThreatChecked) {
+      evidenceVerdict = 'NO_KNOWN_THREATS_FOUND';
+    }
+    // Fallback
+    else {
+      evidenceVerdict = 'UNVERIFIED';
+    }
+
+    var primaryReason = '';
+    var actionGuidance = null;
+
+    if (evidenceVerdict === 'MALICIOUS') {
+      primaryReason = 'Confirmed threat match from verified threat intelligence (' + (threatCheck.observedValue.threatTypes || ['MALWARE']).join(', ') + ').';
+      actionGuidance = 'Do not visit this destination or provide any information.';
+    } else if (evidenceVerdict === 'SUSPICIOUS') {
+      primaryReason = (userGuidance && userGuidance.whyText) 
+        ? userGuidance.whyText 
+        : 'Multiple independent risk indicators were detected for this destination.';
+      actionGuidance = (userGuidance && userGuidance.actionText)
+        ? userGuidance.actionText
+        : 'Verify the destination carefully before entering any personal or account details.';
+    } else if (evidenceVerdict === 'UNVERIFIED') {
+      if (isInspectionIncomplete) {
+        primaryReason = 'Destination could not be verified (' + (networkEvidence && networkEvidence.errorReason ? networkEvidence.errorReason : 'unresolved') + ').';
+        actionGuidance = 'Exercise caution when following unconfirmed links.';
+      } else if (isFixtureDb) {
+        primaryReason = (threatCheck.status === 'MATCH')
+          ? 'Matched a synthetic test fixture. Not verified against production threat intelligence.'
+          : 'Evaluated against synthetic test fixture only; production threat intelligence was not queried.';
+        actionGuidance = 'Synthetic test environment; real-world safety is unverified.';
+      } else if (threatCheck.status === 'UNAVAILABLE') {
+        primaryReason = 'Threat intelligence database is unavailable.';
+        actionGuidance = 'Proceed with caution as threat reputation could not be verified.';
+      } else {
+        primaryReason = 'Available evidence is insufficient to verify destination safety.';
+        actionGuidance = 'Check the domain before proceeding.';
+      }
+    } else if (evidenceVerdict === 'NO_KNOWN_THREATS_FOUND') {
+      primaryReason = 'No known threats were found in the sources checked. This does not confirm the site is safe.';
+      actionGuidance = null;
+    }
+
+    var evidenceModel = {
+      url: {
+        original: originalUrl,
+        resolved: resolvedTargetUrl,
+        isRedirect: isRedirectObserved,
+        redirectHops: isRedirectObserved ? 1 : 0
+      },
+      verdict: evidenceVerdict,
+      summary: {
+        primaryReason: primaryReason,
+        actionGuidance: actionGuidance
+      },
+      checks: checks,
+      evaluatedAt: Date.now()
+    };
+
+    // --- STEP 8: Assemble and return ---
     var allSignals = []
       .concat(tierD)
       .concat(tierC)
@@ -641,6 +1023,8 @@
       status: status,
       localStatus: localStatus,
       verdict: verdict,
+      evidenceVerdict: evidenceVerdict,
+      evidence: evidenceModel,
       reputationStatus: reputationStatus,
       isFixture: isFixture,
       signals: allSignals,
