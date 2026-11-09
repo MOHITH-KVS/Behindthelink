@@ -322,8 +322,8 @@ runTest("UX-012: Actual HTTP redirect produces Redirecting link", () => {
 
 runTest("UX-013: Shortened link with NO_REDIRECT_OBSERVED marks destination unresolved", () => {
   const card = getCard({
-    originalUrl: 'https://t.me/invitegroup',
-    localSignals: { hostname: 't.me', isShortened: true },
+    originalUrl: 'https://bit.ly/3abcXYZ',
+    localSignals: { hostname: 'bit.ly', isShortened: true },
     networkEvidence: { status: 'NO_REDIRECT_OBSERVED' },
     safetyEvidence: { status: 'NO_SIGNALS_DETECTED', signals: [] }
   });

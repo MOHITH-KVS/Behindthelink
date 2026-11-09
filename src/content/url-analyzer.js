@@ -10,6 +10,61 @@
 
   var BTL = (typeof window !== 'undefined' ? window : self).BehindTheLink;
 
+  var TELEGRAM_HOSTS = ['t.me', 'telegram.me', 'telegram.dog'];
+
+  /**
+   * Classifies a Telegram link (t.me, telegram.me, telegram.dog) by its path
+   * and query. These are Telegram's own domains, NOT URL shorteners, so they
+   * must not be treated as hidden-destination links.
+   *
+   * Local-only: parses the URL string; makes no network requests and does not
+   * claim to know who runs the bot, channel or group.
+   *
+   * @param {URL} urlObj
+   * @returns {{kind:string,label:string,username:(string|null),hasStartParameter:boolean}|null}
+   */
+  function parseTelegramLink(urlObj) {
+    var host = urlObj.hostname.toLowerCase().replace(/^www\./, '');
+    if (TELEGRAM_HOSTS.indexOf(host) === -1) return null;
+
+    var segments = urlObj.pathname.split('/').filter(function (s) { return s.length > 0; });
+    var params = urlObj.searchParams;
+    var hasStart = params.has('start') || params.has('startgroup') || params.has('startapp');
+    var first = segments.length > 0 ? segments[0] : '';
+    var firstLower = first.toLowerCase();
+
+    function result(kind, label, username) {
+      return { kind: kind, label: label, username: username || null, hasStartParameter: hasStart };
+    }
+
+    if (!first) return result('HOME', 'Telegram link', null);
+    if (first.charAt(0) === '+' || firstLower === 'joinchat') {
+      return result('INVITE', 'Telegram invite link', null);
+    }
+    if (firstLower === 'share') return result('SHARE', 'Telegram share link', null);
+    if (firstLower === 'proxy' || firstLower === 'socks') {
+      return result('PROXY', 'Telegram proxy setup link', null);
+    }
+    if (firstLower === 'addstickers' || firstLower === 'addemoji') {
+      return result('STICKERS', 'Telegram sticker link', null);
+    }
+    if (firstLower === 's' && segments.length > 1) {
+      return result('CHANNEL', 'Telegram channel link', segments[1]);
+    }
+
+    // Public username: bot, channel, group or person.
+    if (/^[A-Za-z0-9_]{3,64}$/.test(first)) {
+      if (hasStart || /bot$/i.test(first)) {
+        return result('BOT', 'Telegram bot link', first);
+      }
+      if (segments.length > 1 && /^\d+$/.test(segments[1])) {
+        return result('MESSAGE', 'Telegram message link', first);
+      }
+      return result('CHANNEL_OR_PROFILE', 'Telegram channel or profile link', first);
+    }
+    return result('OTHER', 'Telegram link', null);
+  }
+
   /**
    * Analyzes a URL string and returns a structured object of signals.
    *
@@ -53,6 +108,12 @@
     // Check Shortener
     if (BTL.shortenerRegistry && BTL.shortenerRegistry.isShortener(localSignals.hostname)) {
       localSignals.isShortened = true;
+    }
+
+    // Telegram links (t.me etc.) are classified by structure, not as shorteners
+    var telegram = parseTelegramLink(urlObj);
+    if (telegram) {
+      localSignals.telegram = telegram;
     }
 
     var WRAPPER_PARAMS = ['url', 'target', 'dest', 'destination', 'redirect', 'redirect_url', 'u', 'targeturl', 'redirecturl'];
@@ -170,7 +231,10 @@
 
   // Expose on the shared namespace
   BTL.urlAnalyzer = {
-    analyzeUrl: analyzeUrl
+    analyzeUrl: analyzeUrl,
+    parseTelegramLink: function (urlString) {
+      try { return parseTelegramLink(new URL(urlString)); } catch (e) { return null; }
+    }
   };
 
 })();

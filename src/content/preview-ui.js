@@ -259,6 +259,10 @@
           repIcon.textContent = '✓'; repIcon.style.color = '#10b981';
           repText.textContent = 'No known threat reported'; repText.style.color = '#6b7280';
           break;
+        case 'NO_LIVE_DATABASE':
+          repIcon.textContent = '—'; repIcon.style.color = '#9ca3af';
+          repText.textContent = 'Not checked against a live threat database'; repText.style.color = '#6b7280';
+          break;
         case 'REPUTATION_PENDING':
           repIcon.textContent = '⟳'; repIcon.style.color = '#6b7280';
           repText.textContent = 'Checking reputation…'; repText.style.color = '#6b7280';
@@ -379,6 +383,9 @@
     // 6. Link Type
     var linkTypes = [];
     if (hasSignal(signals, 'REDIRECTS_THROUGH_SHORTENER')) linkTypes.push('Shortened link');
+    if (locals.telegram && locals.telegram.label) {
+      linkTypes.push(locals.telegram.label + (locals.telegram.username ? ' (@' + locals.telegram.username + ')' : ''));
+    }
     
     var hasRedirect = hasSignal(signals, 'REDIRECTS_TO_DIFFERENT_DOMAIN') || (net.status === 'HTTP_REDIRECT_OBSERVED' && net.redirectTarget);
     if (hasRedirect) linkTypes.push('Redirecting link');

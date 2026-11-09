@@ -29,8 +29,6 @@
     'v.gd',
     'lnkd.in',
     'youtu.be',
-    't.me',
-    'telegram.me',
     'link.district.in',
     'smarturl.it'
   ]);

@@ -14,7 +14,8 @@ const tests = [
   'test/test-domain-utils.js',
   'test/test-lookalike-analyzer.js',
   'test/test-threat-feed-compiler.js',
-  'test/test-stage1-overhaul.js'
+  'test/test-stage1-overhaul.js',
+  'test/test-trust-fixes.js'
 ];
 
 let allPassed = true;

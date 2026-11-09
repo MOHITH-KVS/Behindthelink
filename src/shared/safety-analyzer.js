@@ -567,7 +567,9 @@
             : 'This link was flagged as a known threat (' + threatTypesStr + ').'
         });
       } else if (reputationSignals.status === 'REPUTATION_NO_MATCH') {
-        reputationStatus = 'NO_KNOWN_THREAT';
+        // A non-match against the synthetic fixture database proves nothing, so it
+        // must never surface as "No known threat" in the UI.
+        reputationStatus = isFixture ? 'NO_LIVE_DATABASE' : 'NO_KNOWN_THREAT';
       } else if (reputationSignals.status === 'REPUTATION_UNAVAILABLE') {
         reputationStatus = 'REPUTATION_UNAVAILABLE';
       } else if (reputationSignals.status === 'REPUTATION_NOT_ENABLED') {
