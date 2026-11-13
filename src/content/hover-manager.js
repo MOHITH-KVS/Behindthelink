@@ -33,6 +33,24 @@
   //  Event handlers (attached via document delegation)
   // ───────────────────────────────────────────────────
 
+  /**
+   * Finds the link under the pointer. Uses the event's composed path so links inside
+   * open shadow roots (web components) are found; falls back to closest() otherwise.
+   */
+  function findLink(event) {
+    var path = (event && typeof event.composedPath === 'function') ? event.composedPath() : null;
+    if (path && path.length > 0) {
+      for (var i = 0; i < path.length; i++) {
+        var node = path[i];
+        if (node && node.nodeType === 1 && typeof node.matches === 'function' && node.matches('a[href]')) {
+          return node;
+        }
+      }
+      return null;
+    }
+    return (event && event.target && typeof event.target.closest === 'function') ? event.target.closest('a[href]') : null;
+  }
+
   function handleMouseOver(event) {
     // If entering the preview card, cancel any pending close
     if (isCard(event.target)) {
@@ -40,7 +58,7 @@
       return;
     }
 
-    var link = event.target.closest('a[href]');
+    var link = findLink(event);
 
     // Still inside the same valid link — cancel any pending close
     if (link && link === currentLink) {
@@ -248,7 +266,7 @@
       return;
     }
 
-    var link = event.target.closest('a[href]');
+    var link = findLink(event);
     if (!link) return;
 
     safeSendMessage({
@@ -261,6 +279,7 @@
 
   // Expose on the shared namespace
   BTL.hoverManager = {
+    findLink: findLink,
     handleMouseOver: handleMouseOver,
     handleMouseOut: handleMouseOut,
     handleClick: handleClick,

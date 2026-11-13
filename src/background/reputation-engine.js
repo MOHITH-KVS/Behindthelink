@@ -83,6 +83,13 @@
     const isDbFixture = dbStatus ? !!dbStatus.isFixture : false;
     const dbSource = dbStatus && dbStatus.source ? dbStatus.source : (isDbFixture ? 'OFFLINE_SYNTHETIC_FIXTURE' : 'URLHAUS_DATASET');
 
+    const dbInfo = {
+      source: dbSource,
+      isFixture: isDbFixture,
+      generatedAt: (dbStatus && dbStatus.generatedAt) || null,
+      entryCount: (dbStatus && dbStatus.uniqueHashCount) || 0
+    };
+
     const urlsToCheck = [];
     if (targetUrl && typeof targetUrl === 'string') {
       urlsToCheck.push(targetUrl);
@@ -105,7 +112,7 @@
 
     const uniqueExprs = Array.from(new Set(allExpressions));
     if (uniqueExprs.length === 0) {
-      return { status: 'REPUTATION_NO_MATCH', isFixture: isDbFixture, source: dbSource };
+      return { status: 'REPUTATION_NO_MATCH', isFixture: isDbFixture, source: dbSource, dbInfo: dbInfo };
     }
 
     const confirmedThreats = [];
@@ -143,14 +150,16 @@
         status: 'REPUTATION_CONFIRMED_THREAT',
         threatTypes: Array.from(new Set(confirmedThreats)),
         isFixture: isFixture,
-        source: dbSource
+        source: dbSource,
+        dbInfo: dbInfo
       };
     }
 
     return {
       status: 'REPUTATION_NO_MATCH',
       isFixture: isDbFixture,
-      source: dbSource
+      source: dbSource,
+      dbInfo: dbInfo
     };
   }
 

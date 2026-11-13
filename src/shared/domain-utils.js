@@ -530,7 +530,79 @@
     };
   }
 
+  function parseIPv4(h) {
+    var m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
+    if (!m) return null;
+    var parts = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
+    for (var i = 0; i < 4; i++) { if (parts[i] > 255) return null; }
+    return parts;
+  }
+
+  function isPrivateIPv4(p) {
+    var a = p[0], b = p[1];
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;                 // link-local
+    if (a === 172 && b >= 16 && b <= 31) return true;        // RFC 1918
+    if (a === 192 && b === 168) return true;                 // RFC 1918
+    if (a === 192 && b === 0 && p[2] === 0) return true;     // IETF protocol assignments
+    if (a === 100 && b >= 64 && b <= 127) return true;       // carrier-grade NAT
+    if (a === 198 && (b === 18 || b === 19)) return true;    // benchmarking
+    if (a >= 224) return true;                               // multicast / reserved / broadcast
+    return false;
+  }
+
+  function isPrivateIPv6(v6) {
+    v6 = v6.toLowerCase();
+    if (v6 === '::' || v6 === '::1') return true;
+    var mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(v6);
+    if (mapped) {
+      var hi = parseInt(mapped[1], 16), lo = parseInt(mapped[2], 16);
+      return isPrivateIPv4([hi >> 8, hi & 255, lo >> 8, lo & 255]);
+    }
+    var mappedDotted = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(v6);
+    if (mappedDotted) {
+      var v4 = parseIPv4(mappedDotted[1]);
+      return v4 ? isPrivateIPv4(v4) : false;
+    }
+    var first = v6.split(':')[0];
+    if (first === '') return true;                           // other ::x forms (reserved low range)
+    if (/^f[cd][0-9a-f]{2}$/.test(first)) return true;       // fc00::/7 unique local
+    if (/^fe[89ab][0-9a-f]$/.test(first)) return true;       // fe80::/10 link-local
+    if (/^ff[0-9a-f]{2}$/.test(first)) return true;          // ff00::/8 multicast
+    return false;
+  }
+
+  /**
+   * True when a hostname points at the user's own machine or a private/internal
+   * network (loopback, RFC 1918, link-local, CGNAT, IPv6 local ranges, internal
+   * names such as "router" or "printer.lan"). Expects the hostname as produced by
+   * URL.hostname, which already normalizes numeric forms such as 2130706433.
+   */
+  var INTERNAL_SUFFIXES = ['localhost', 'local', 'internal', 'lan', 'home', 'corp', 'intranet', 'home.arpa'];
+
+  function isPrivateOrLocalHost(hostname) {
+    if (!hostname || typeof hostname !== 'string') return false;
+    var h = hostname.trim().toLowerCase();
+    if (h.charAt(h.length - 1) === '.') h = h.slice(0, -1);
+    if (!h) return false;
+
+    if (h.charAt(0) === '[' && h.charAt(h.length - 1) === ']') {
+      return isPrivateIPv6(h.slice(1, -1));
+    }
+    var v4 = parseIPv4(h);
+    if (v4) return isPrivateIPv4(v4);
+    if (h.indexOf(':') !== -1) return isPrivateIPv6(h);
+
+    if (h.indexOf('.') === -1) return true;                  // single-label name, e.g. "router"
+    for (var i = 0; i < INTERNAL_SUFFIXES.length; i++) {
+      var s = INTERNAL_SUFFIXES[i];
+      if (h === s || h.slice(-(s.length + 1)) === '.' + s) return true;
+    }
+    return false;
+  }
+
   BTL.domainUtils = {
+    isPrivateOrLocalHost: isPrivateOrLocalHost,
     PSL_VERSION: PSL_VERSION,
     isIpAddress: isIpAddress,
     normalizeHostname: normalizeHostname,

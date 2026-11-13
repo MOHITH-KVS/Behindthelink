@@ -85,6 +85,35 @@
   //  Internals
   // ───────────────────────────────────────────────────
 
+  var DB_SOURCE_NAMES = { URLHAUS_DATASET: 'URLhaus (abuse.ch)' };
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var STALE_DB_DAYS = 7;
+
+  function threatDbName(info) {
+    return DB_SOURCE_NAMES[info.source] || String(info.source || 'threat database');
+  }
+
+  function formatCount(n) {
+    return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+
+  // Facts about the database that produced the result: which list, how big, how old.
+  function describeThreatDb(info, status) {
+    var parts = [(status === 'KNOWN_THREAT' ? 'Listed in ' : 'Checked against ') + threatDbName(info)];
+    if (info.entryCount > 0) parts.push(formatCount(info.entryCount) + ' entries');
+    var built = info.generatedAt ? new Date(info.generatedAt) : null;
+    var isStale = false;
+    if (built && !isNaN(built.getTime())) {
+      parts.push('updated ' + built.getUTCDate() + ' ' + MONTHS[built.getUTCMonth()] + ' ' + built.getUTCFullYear());
+      var ageDays = Math.floor((Date.now() - built.getTime()) / 86400000);
+      if (ageDays > STALE_DB_DAYS) {
+        parts.push(ageDays + ' days old');
+        isStale = true;
+      }
+    }
+    return { text: parts.join(' \u00b7 '), isStale: isStale };
+  }
+
   function ensureHost() {
     if (hostElement) return;
 
@@ -207,6 +236,8 @@
         destEvidence.textContent = 'Destination could not be verified (interstitial challenge or blocked by site)';
       } else if (net.errorReason === 'DESTINATION_UNRESOLVED') {
         destEvidence.textContent = 'Destination unresolved (shortener did not provide a destination)';
+      } else if (net.errorReason === 'PRIVATE_ADDRESS') {
+        destEvidence.textContent = 'Points to a private or local network address (not inspected)';
       } else if (net.errorReason === 'REDIRECT_LOOP') {
         destEvidence.textContent = 'Destination could not be verified (redirect loop detected)';
       } else if (net.errorReason === 'MALFORMED_DESTINATION') {
@@ -281,6 +312,28 @@
       repStatusEl.appendChild(repIcon);
       repStatusEl.appendChild(repText);
       safetyBlock.appendChild(repStatusEl);
+
+      var dbInfo = safety.reputationDb;
+      if (dbInfo && !dbInfo.isFixture &&
+          (safety.reputationStatus === 'NO_KNOWN_THREAT' || safety.reputationStatus === 'KNOWN_THREAT')) {
+        var described = describeThreatDb(dbInfo, safety.reputationStatus);
+        var srcEl = document.createElement('div');
+        srcEl.className = 'btl-rep-source' + (described.isStale ? ' btl-rep-source-stale' : '');
+        srcEl.textContent = described.text;
+        safetyBlock.appendChild(srcEl);
+        if (safety.reputationStatus === 'KNOWN_THREAT' && dbInfo.source === 'URLHAUS_DATASET') {
+          var verifyEl = document.createElement('div');
+          verifyEl.className = 'btl-rep-source';
+          verifyEl.appendChild(document.createTextNode('To verify, '));
+          var verifyLink = document.createElement('a');
+          verifyLink.textContent = 'search this link at urlhaus.abuse.ch';
+          verifyLink.setAttribute('href', 'https://urlhaus.abuse.ch/browse.php?search=' + encodeURIComponent(payload.originalUrl || ''));
+          verifyLink.setAttribute('target', '_blank');
+          verifyLink.setAttribute('rel', 'noopener noreferrer');
+          verifyEl.appendChild(verifyLink);
+          safetyBlock.appendChild(verifyEl);
+        }
+      }
     }
 
     var localStatusEl = document.createElement('div');
@@ -420,6 +473,12 @@
     var cList = document.createElement('ul');
     cList.className = 'btl-bullet-list';
     cList.appendChild(createLi('URL structure and security characteristics'));
+    if (safety.reputationDb && !safety.reputationDb.isFixture &&
+        (safety.reputationStatus === 'NO_KNOWN_THREAT' || safety.reputationStatus === 'KNOWN_THREAT')) {
+      cList.appendChild(createLi('Known-threat list: ' + threatDbName(safety.reputationDb)));
+    } else if (safety.reputationStatus === 'NO_LIVE_DATABASE') {
+      cList.appendChild(createLi('! Known-threat list: only offline test data is loaded, so no real threat check was made'));
+    }
     if (net.status === 'HTTP_REDIRECT_OBSERVED') {
       cList.appendChild(createLi('Observed redirect destination routing'));
     } else if (net.status === 'FAILED') {
@@ -431,6 +490,8 @@
         cList.appendChild(createLi('! Destination blocked by interstitial challenge'));
       } else if (net.errorReason === 'DESTINATION_UNRESOLVED') {
         cList.appendChild(createLi('! Destination could not be resolved from shortener'));
+      } else if (net.errorReason === 'PRIVATE_ADDRESS') {
+        cList.appendChild(createLi('! Destination is a private or local network address (not inspected)'));
       } else if (net.errorReason === 'REDIRECT_LOOP') {
         cList.appendChild(createLi('! Redirect loop detected'));
       } else if (net.errorReason === 'MALFORMED_DESTINATION') {
@@ -597,6 +658,9 @@
       '.btl-bullet-list{margin:4px 0 0 0;padding-left:16px;font-size:12px;color:#4b5563;}' +
       '.btl-bullet-list li{margin-bottom:4px;}' +
       '.btl-limits-label{margin-top:8px;font-weight:600;font-size:12px;color:#4b5563;}' +
+      '.btl-rep-source{font-size:11px;color:#6b7280;margin:2px 0 6px 0;}' +
+      '.btl-rep-source-stale{color:#b45309;}' +
+      '.btl-rep-source a{color:#2563eb;text-decoration:underline;}' +
       '.btl-details{margin-top:12px;border-top:1px solid #f3f4f6;padding-top:8px;}' +
       'summary{font-size:12px;font-weight:500;color:#6b7280;cursor:pointer;user-select:none;}' +
       '.btl-details-content{margin-top:8px;font-size:11px;color:#4b5563;}' +

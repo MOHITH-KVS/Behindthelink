@@ -12,6 +12,11 @@
 
   var BTL = window.BehindTheLink;
 
+  // The scripts can be loaded twice in one page (for example when they are added to
+  // an already-open tab at install time). Attach the listeners only once.
+  if (window.__btlListenersAttached) return;
+  window.__btlListenersAttached = true;
+
   // Document-level delegation in the capturing phase (capture: true)
   // This ensures we receive events BEFORE page scripts can call stopPropagation(),
   // which fixes false popups on dynamic sites like LinkedIn and Telegram.

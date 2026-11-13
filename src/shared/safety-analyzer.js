@@ -434,6 +434,10 @@
                                 (networkEvidence && (networkEvidence.errorReason === 'DESTINATION_UNRESOLVED' || networkEvidence.errorReason === 'BLOCKED_INTERSTITIAL'))) && 
                               (!browserObservation || browserObservation.status === 'NONE');
     
+    if (networkEvidence && networkEvidence.errorReason === 'PRIVATE_ADDRESS') {
+      limitations.push('Destination is a private or local network address and was not inspected');
+    }
+
     var assessmentBasis;
     if (shortenerNoResolve || (networkEvidence && (networkEvidence.errorReason === 'DESTINATION_UNRESOLVED' || networkEvidence.errorReason === 'BLOCKED_INTERSTITIAL'))) {
       assessmentBasis = 'INCOMPLETE';
@@ -1028,6 +1032,7 @@
       evidenceVerdict: evidenceVerdict,
       evidence: evidenceModel,
       reputationStatus: reputationStatus,
+      reputationDb: (reputationSignals && reputationSignals.dbInfo) ? reputationSignals.dbInfo : null,
       isFixture: isFixture,
       signals: allSignals,
       userGuidance: userGuidance,

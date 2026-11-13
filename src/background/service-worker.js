@@ -87,6 +87,20 @@ function isValidHttpUrl(urlString) {
   }
 }
 
+/**
+ * True when the URL points at a private, local or internal-network address.
+ * Hover checks must never contact such destinations.
+ */
+function isPrivateTarget(urlString) {
+  try {
+    var ns = (typeof self !== 'undefined' ? self : window).BehindTheLink;
+    if (!ns || !ns.domainUtils || typeof ns.domainUtils.isPrivateOrLocalHost !== 'function') return false;
+    return ns.domainUtils.isPrivateOrLocalHost(new URL(urlString).hostname);
+  } catch (e) {
+    return false;
+  }
+}
+
 function extractMetaRefreshTarget(htmlText, baseUrl) {
   if (!htmlText || typeof htmlText !== 'string') return null;
   const match = htmlText.match(/<meta[^>]*?http-equiv\s*=\s*["']?refresh["']?[^>]*?content\s*=\s*["']?\s*\d*\s*;\s*url=([^"'>\s]+)/i) ||
@@ -188,6 +202,12 @@ async function resolveDestination(originalUrlString, requestId, contextObj) {
     networkEvidence.errorReason = 'MALFORMED_DESTINATION';
     clearTimeout(timeoutId);
     activeRequests.delete(requestId);
+  } else if (isPrivateTarget(originalUrlString)) {
+    // Never send requests to the user's own machine or internal network.
+    networkEvidence.status = 'FAILED';
+    networkEvidence.errorReason = 'PRIVATE_ADDRESS';
+    clearTimeout(timeoutId);
+    activeRequests.delete(requestId);
   } else {
     try {
       let currentUrl = originalUrlString;
@@ -214,6 +234,8 @@ async function resolveDestination(originalUrlString, requestId, contextObj) {
           headRes = await fetch(currentUrl, {
             method: 'HEAD',
             redirect: 'follow',
+            credentials: 'omit',
+            referrerPolicy: 'no-referrer',
             signal: controller.signal
           });
           if (headRes.status === 405 || headRes.status === 501 || headRes.status === 403) {
@@ -228,6 +250,12 @@ async function resolveDestination(originalUrlString, requestId, contextObj) {
           if (!isValidHttpUrl(headRes.url)) {
             networkEvidence.status = 'FAILED';
             networkEvidence.errorReason = 'MALFORMED_DESTINATION';
+            isTerminated = true;
+            break;
+          }
+          if (isPrivateTarget(headRes.url)) {
+            networkEvidence.status = 'FAILED';
+            networkEvidence.errorReason = 'PRIVATE_ADDRESS';
             isTerminated = true;
             break;
           }
@@ -248,6 +276,8 @@ async function resolveDestination(originalUrlString, requestId, contextObj) {
           getRes = await fetch(currentUrl, {
             method: 'GET',
             redirect: 'follow',
+            credentials: 'omit',
+            referrerPolicy: 'no-referrer',
             signal: controller.signal
           });
         } catch (e) {
@@ -259,6 +289,12 @@ async function resolveDestination(originalUrlString, requestId, contextObj) {
           if (!isValidHttpUrl(getRes.url)) {
             networkEvidence.status = 'FAILED';
             networkEvidence.errorReason = 'MALFORMED_DESTINATION';
+            isTerminated = true;
+            break;
+          }
+          if (isPrivateTarget(getRes.url)) {
+            networkEvidence.status = 'FAILED';
+            networkEvidence.errorReason = 'PRIVATE_ADDRESS';
             isTerminated = true;
             break;
           }
@@ -283,6 +319,12 @@ async function resolveDestination(originalUrlString, requestId, contextObj) {
           if (!isValidHttpUrl(metaTarget)) {
             networkEvidence.status = 'FAILED';
             networkEvidence.errorReason = 'MALFORMED_DESTINATION';
+            isTerminated = true;
+            break;
+          }
+          if (isPrivateTarget(metaTarget)) {
+            networkEvidence.status = 'FAILED';
+            networkEvidence.errorReason = 'PRIVATE_ADDRESS';
             isTerminated = true;
             break;
           }
@@ -703,5 +745,52 @@ if (chrome.webNavigation) {
         documentId: details.documentId || 'unknown'
       });
     }
+  });
+}
+
+// ============================================================================
+// First install: add the content scripts to tabs that were already open.
+//
+// Chrome only injects content scripts into pages loaded AFTER installation, so
+// without this the extension looks dead until the user refreshes every tab.
+// Updates are skipped on purpose: older content scripts are still running in
+// those tabs and injecting again could show two cards.
+// ============================================================================
+async function injectIntoOpenTabs(details) {
+  const result = { injected: 0, skipped: 0 };
+  if (!details || details.reason !== 'install') return result;
+  if (!chrome.scripting || !chrome.tabs || !chrome.runtime || typeof chrome.runtime.getManifest !== 'function') return result;
+
+  const manifest = chrome.runtime.getManifest();
+  const group = manifest && manifest.content_scripts && manifest.content_scripts[0];
+  const files = group && Array.isArray(group.js) ? group.js : [];
+  if (files.length === 0) return result;
+
+  let tabs = [];
+  try {
+    tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
+  } catch (e) {
+    return result;
+  }
+
+  for (const tab of tabs) {
+    if (!tab || typeof tab.id !== 'number' || tab.discarded) {
+      result.skipped++;
+      continue;
+    }
+    try {
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: files });
+      result.injected++;
+    } catch (e) {
+      // Pages the browser does not allow (for example the Web Store) are skipped.
+      result.skipped++;
+    }
+  }
+  return result;
+}
+
+if (chrome.runtime && chrome.runtime.onInstalled && typeof chrome.runtime.onInstalled.addListener === 'function') {
+  chrome.runtime.onInstalled.addListener((details) => {
+    injectIntoOpenTabs(details).catch(() => {});
   });
 }
