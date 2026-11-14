@@ -236,6 +236,8 @@
         destEvidence.textContent = 'Destination could not be verified (interstitial challenge or blocked by site)';
       } else if (net.errorReason === 'DESTINATION_UNRESOLVED') {
         destEvidence.textContent = 'Destination unresolved (shortener did not provide a destination)';
+      } else if (net.errorReason === 'EXTENSION_UNAVAILABLE') {
+        destEvidence.textContent = 'BehindTheLink could not run its checks on this page. Refresh the page and try again.';
       } else if (net.errorReason === 'PRIVATE_ADDRESS') {
         destEvidence.textContent = 'Points to a private or local network address (not inspected)';
       } else if (net.errorReason === 'REDIRECT_LOOP') {
@@ -377,8 +379,23 @@
     localStatusEl.appendChild(sIcon);
     localStatusEl.appendChild(sText);
     
-    // Only append localStatus if we don't have a KNOWN_THREAT overriding everything
-    if (safety.reputationStatus !== 'KNOWN_THREAT' && verdict !== 'KNOWN_THREAT' && verdict !== 'STRONG_WARNING') {
+    // Positive evidence first: the domain is on a brand's official domain list.
+    var isCleanVerdict = !verdict || verdict === 'NO_KNOWN_THREAT' || verdict === 'NO_SIGNALS_DETECTED';
+    if (safety.verifiedOfficial && safety.reputationStatus !== 'KNOWN_THREAT' && verdict !== 'KNOWN_THREAT' && verdict !== 'STRONG_WARNING') {
+      var verifiedEl = document.createElement('div');
+      verifiedEl.className = 'btl-verified';
+      verifiedEl.textContent = '\u2713 Verified official site \u00b7 ' + safety.verifiedOfficial.displayName;
+      safetyBlock.appendChild(verifiedEl);
+      var verifiedNote = document.createElement('div');
+      verifiedNote.className = 'btl-rep-source';
+      verifiedNote.textContent = 'This domain is on the official domain list for this organization. Pages on it are not inspected.';
+      safetyBlock.appendChild(verifiedNote);
+    }
+
+    // Only append localStatus if we don't have a KNOWN_THREAT overriding everything,
+    // and skip the generic "no warning signals" text when the site is verified.
+    var showLocalStatus = !(safety.verifiedOfficial && isCleanVerdict);
+    if (showLocalStatus && safety.reputationStatus !== 'KNOWN_THREAT' && verdict !== 'KNOWN_THREAT' && verdict !== 'STRONG_WARNING') {
       safetyBlock.appendChild(localStatusEl);
     }
 
@@ -473,6 +490,9 @@
     var cList = document.createElement('ul');
     cList.className = 'btl-bullet-list';
     cList.appendChild(createLi('URL structure and security characteristics'));
+    if (safety.verifiedOfficial) {
+      cList.appendChild(createLi('Official domain list: matches ' + safety.verifiedOfficial.displayName));
+    }
     if (safety.reputationDb && !safety.reputationDb.isFixture &&
         (safety.reputationStatus === 'NO_KNOWN_THREAT' || safety.reputationStatus === 'KNOWN_THREAT')) {
       cList.appendChild(createLi('Known-threat list: ' + threatDbName(safety.reputationDb)));
@@ -490,6 +510,8 @@
         cList.appendChild(createLi('! Destination blocked by interstitial challenge'));
       } else if (net.errorReason === 'DESTINATION_UNRESOLVED') {
         cList.appendChild(createLi('! Destination could not be resolved from shortener'));
+      } else if (net.errorReason === 'EXTENSION_UNAVAILABLE') {
+        cList.appendChild(createLi('! The checker did not respond (refresh this page)'));
       } else if (net.errorReason === 'PRIVATE_ADDRESS') {
         cList.appendChild(createLi('! Destination is a private or local network address (not inspected)'));
       } else if (net.errorReason === 'REDIRECT_LOOP') {
@@ -658,6 +680,7 @@
       '.btl-bullet-list{margin:4px 0 0 0;padding-left:16px;font-size:12px;color:#4b5563;}' +
       '.btl-bullet-list li{margin-bottom:4px;}' +
       '.btl-limits-label{margin-top:8px;font-weight:600;font-size:12px;color:#4b5563;}' +
+      '.btl-verified{font-size:13px;font-weight:600;color:#047857;margin:0 0 2px 0;}' +
       '.btl-rep-source{font-size:11px;color:#6b7280;margin:2px 0 6px 0;}' +
       '.btl-rep-source-stale{color:#b45309;}' +
       '.btl-rep-source a{color:#2563eb;text-decoration:underline;}' +

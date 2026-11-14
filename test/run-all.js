@@ -21,7 +21,8 @@ const tests = [
   'test/test-trust-fixes.js',
   'test/test-network-guards.js',
   'test/test-evidence-line.js',
-  'test/test-everyone-ready.js'
+  'test/test-everyone-ready.js',
+  'test/test-verified-official.js'
 ];
 
 let allPassed = true;

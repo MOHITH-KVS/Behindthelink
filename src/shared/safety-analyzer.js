@@ -199,6 +199,22 @@
   /**
    * Computes the final safetyEvidence object and standardized evidence model.
    */
+  /**
+   * Returns the brand whose official domain list contains this hostname, or null.
+   * This is positive evidence about WHO OWNS the domain; it says nothing about
+   * individual pages on it.
+   */
+  function findOfficialBrand(hostname) {
+    if (!hostname || !BTL.brandRegistry) return null;
+    var brands = BTL.brandRegistry.getAllBrands();
+    for (var i = 0; i < brands.length; i++) {
+      if (BTL.brandRegistry.isOfficialDomain(brands[i].id, hostname)) {
+        return { brandId: brands[i].id, displayName: brands[i].displayName, category: brands[i].category, hostname: hostname };
+      }
+    }
+    return null;
+  }
+
   function computeSafetyEvidence(
     originalUrl,
     localSignals,
@@ -1025,7 +1041,18 @@
        userGuidance = BTL.assessmentAggregator.aggregate(allSignals, verdict);
     }
 
+    // Positive evidence: the destination is on a brand's official domain list.
+    // Never shown for a known threat, and never for a shortener whose destination is unknown.
+    var verifiedOfficial = null;
+    var destinationHost = (targetLocalSignals && targetLocalSignals.hostname) ? targetLocalSignals.hostname
+      : (localSignals && localSignals.hostname ? localSignals.hostname : null);
+    var shortenerUnresolved = !!(localSignals && localSignals.isShortened && !(targetLocalSignals && targetLocalSignals.hostname));
+    if (!shortenerUnresolved && reputationStatus !== 'KNOWN_THREAT' && verdict !== 'KNOWN_THREAT' && verdict !== 'STRONG_WARNING') {
+      verifiedOfficial = findOfficialBrand(destinationHost);
+    }
+
     return {
+      verifiedOfficial: verifiedOfficial,
       status: status,
       localStatus: localStatus,
       verdict: verdict,

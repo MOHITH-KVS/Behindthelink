@@ -180,6 +180,19 @@
         clearTimeout(uiDeadlineTimer);
         if (activeReqId === currentRequestId && !isResolved && response) {
           isResolved = true;
+          if (response.status === 'network_error' && !response.networkEvidence) {
+            // The background checker did not answer (for example this tab was open before the
+            // extension was updated). Show a complete card instead of a blank one.
+            BTL.previewUI.updateNetworkResult({
+              originalUrl: url,
+              localSignals: analysisResult ? analysisResult.localSignals : {},
+              riskSignals: analysisResult ? analysisResult.riskSignals : { severity: 'NONE', signals: [] },
+              networkEvidence: { status: 'FAILED', errorReason: 'EXTENSION_UNAVAILABLE', redirectTarget: null },
+              browserObservation: { status: 'NONE', observedLatestUrl: null, observedAt: null, correlationEvidence: null },
+              safetyEvidence: { status: 'INSPECTION_INCOMPLETE', verdict: 'INSPECTION_INCOMPLETE', signals: [], limitations: [], assessmentBasis: 'LOCAL_ONLY' }
+            }, analysisResult);
+            return;
+          }
           BTL.previewUI.updateNetworkResult(response, analysisResult);
 
           // Skip deferred reputation lookup if local threat intelligence is disabled
