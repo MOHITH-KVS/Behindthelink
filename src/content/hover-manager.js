@@ -33,6 +33,24 @@
   //  Event handlers (attached via document delegation)
   // ───────────────────────────────────────────────────
 
+  /**
+   * Finds the link under the pointer. Uses the event's composed path so links inside
+   * open shadow roots (web components) are found; falls back to closest() otherwise.
+   */
+  function findLink(event) {
+    var path = (event && typeof event.composedPath === 'function') ? event.composedPath() : null;
+    if (path && path.length > 0) {
+      for (var i = 0; i < path.length; i++) {
+        var node = path[i];
+        if (node && node.nodeType === 1 && typeof node.matches === 'function' && node.matches('a[href]')) {
+          return node;
+        }
+      }
+      return null;
+    }
+    return (event && event.target && typeof event.target.closest === 'function') ? event.target.closest('a[href]') : null;
+  }
+
   function handleMouseOver(event) {
     // If entering the preview card, cancel any pending close
     if (isCard(event.target)) {
@@ -40,7 +58,7 @@
       return;
     }
 
-    var link = event.target.closest('a[href]');
+    var link = findLink(event);
 
     // Still inside the same valid link — cancel any pending close
     if (link && link === currentLink) {
@@ -162,7 +180,25 @@
         clearTimeout(uiDeadlineTimer);
         if (activeReqId === currentRequestId && !isResolved && response) {
           isResolved = true;
+          if (response.status === 'network_error' && !response.networkEvidence) {
+            // The background checker did not answer (for example this tab was open before the
+            // extension was updated). Show a complete card instead of a blank one.
+            BTL.previewUI.updateNetworkResult({
+              originalUrl: url,
+              localSignals: analysisResult ? analysisResult.localSignals : {},
+              riskSignals: analysisResult ? analysisResult.riskSignals : { severity: 'NONE', signals: [] },
+              networkEvidence: { status: 'FAILED', errorReason: 'EXTENSION_UNAVAILABLE', redirectTarget: null },
+              browserObservation: { status: 'NONE', observedLatestUrl: null, observedAt: null, correlationEvidence: null },
+              safetyEvidence: { status: 'INSPECTION_INCOMPLETE', verdict: 'INSPECTION_INCOMPLETE', signals: [], limitations: [], assessmentBasis: 'LOCAL_ONLY' }
+            }, analysisResult);
+            return;
+          }
           BTL.previewUI.updateNetworkResult(response, analysisResult);
+
+          // Skip deferred reputation lookup if local threat intelligence is disabled
+          if (response.safetyEvidence && response.safetyEvidence.reputationStatus === 'REPUTATION_NOT_ENABLED') {
+            return;
+          }
 
           // PHASE 4B.2: Reputation Delay
           // Schedule reputation check only if the user remains interested
@@ -243,7 +279,7 @@
       return;
     }
 
-    var link = event.target.closest('a[href]');
+    var link = findLink(event);
     if (!link) return;
 
     safeSendMessage({
@@ -256,6 +292,7 @@
 
   // Expose on the shared namespace
   BTL.hoverManager = {
+    findLink: findLink,
     handleMouseOver: handleMouseOver,
     handleMouseOut: handleMouseOut,
     handleClick: handleClick,

@@ -1,4 +1,7 @@
 const { execSync } = require('child_process');
+const path = require('path');
+// Every test process uses the fixed fixture database, never the real shipped one.
+const testEnv = Object.assign({}, process.env, { BTL_THREAT_DB_PATH: path.join(__dirname, 'fixtures', 'fixture-threat-db.json') });
 const tests = [
   'test/test-data-model.js',
   'test/test-safety-analyzer.js',
@@ -6,16 +9,26 @@ const tests = [
   'test/test-canonicalization.js',
   'test/test-expression-generator.js',
   'test/test-reputation-engine.js',
+  'test/test-local-threat-db.js',
   'test/test-context-extractor.js',
   'test/test-claim-destination.js',
   'test/test-deception-analyzer.js',
-  'test/test-combined-assessment.js'
+  'test/test-combined-assessment.js',
+  'test/test-domain-utils.js',
+  'test/test-lookalike-analyzer.js',
+  'test/test-threat-feed-compiler.js',
+  'test/test-stage1-overhaul.js',
+  'test/test-trust-fixes.js',
+  'test/test-network-guards.js',
+  'test/test-evidence-line.js',
+  'test/test-everyone-ready.js',
+  'test/test-verified-official.js'
 ];
 
 let allPassed = true;
 for (const t of tests) {
   try {
-    const output = execSync(`node ${t}`, { encoding: 'utf8' });
+    const output = execSync(`node ${t}`, { encoding: 'utf8', env: testEnv });
     console.log(`=== Output from ${t} ===\n${output.trim()}\n`);
   } catch(e) {
     console.log(`=== Output from ${t} (FAILED) ===\n${e.stdout}\n${e.stderr}\n`);

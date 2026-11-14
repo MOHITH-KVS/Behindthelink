@@ -67,11 +67,22 @@ vm.runInContext(safetyAnalyzerCode, sandbox);
 // Inject activeRequests Map for service-worker.js
 vm.runInContext('const activeRequests = new Map();', sandbox);
 // Inject TIMEOUT_MS and normalizeUrl
-vm.runInContext('const TIMEOUT_MS = 5000; function normalizeUrl(u) { return u; } function logDiagnostic() {}', sandbox);
+vm.runInContext('const TIMEOUT_MS = 5000; const MAX_HOPS = 5; function normalizeUrl(u) { return u; } function logDiagnostic() {}', sandbox);
 
 // Run service worker code (extracting resolveDestination)
+const helperStart = serviceWorkerCode.indexOf('const MAX_BYTES =');
+const resolverStart = serviceWorkerCode.indexOf('async function resolveDestination');
+if (helperStart < 0 || resolverStart < 0 || helperStart >= resolverStart) {
+  throw new Error('Could not locate service-worker helpers and resolver');
+}
+const swHelpers = serviceWorkerCode.substring(helperStart, resolverStart);
+const swResolver = serviceWorkerCode.substring(
+  resolverStart,
+  serviceWorkerCode.indexOf('// ============================================================================', resolverStart)
+);
 const swExtract = `
-  ${serviceWorkerCode.substring(serviceWorkerCode.indexOf('async function resolveDestination'), serviceWorkerCode.indexOf('// ============================================================================'))}
+  ${swHelpers}
+  ${swResolver}
   self.BehindTheLink.resolveDestination = resolveDestination;
 `;
 vm.runInContext(swExtract, sandbox);

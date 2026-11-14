@@ -60,6 +60,18 @@ function toBase64(bytes) {
 }
 
 /**
+ * Converts a Uint8Array to a lowercase Hex string.
+ */
+function toHex(bytes) {
+  let hex = '';
+  for (let i = 0; i < bytes.length; i++) {
+    const h = bytes[i].toString(16);
+    hex += (h.length === 1 ? '0' + h : h);
+  }
+  return hex;
+}
+
+/**
  * Compares two Uint8Arrays for byte-for-byte equality.
  */
 function isHashEqual(a, b) {
@@ -83,6 +95,7 @@ function isHashEqual(a, b) {
     computeHash,
     getPrefix,
     toBase64,
+    toHex,
     isHashEqual
   };
 }));

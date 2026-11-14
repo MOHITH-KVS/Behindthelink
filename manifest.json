@@ -9,6 +9,8 @@
       "matches": ["<all_urls>"],
       "js": [
         "src/shared/constants.js",
+        "src/shared/brand-registry.js",
+        "src/shared/domain-utils.js",
         "src/content/link-eligibility.js",
         "src/content/tracking-registry.js",
         "src/content/shortener-registry.js",
@@ -25,12 +27,14 @@
 
   "icons": {
     "16":  "assets/icons/icon-16.png",
+    "32":  "assets/icons/icon-32.png",
     "48":  "assets/icons/icon-48.png",
     "128": "assets/icons/icon-128.png"
   },
   "permissions": [
     "webNavigation",
-    "storage"
+    "storage",
+    "scripting"
   ],
   "host_permissions": [
     "http://*/*",
