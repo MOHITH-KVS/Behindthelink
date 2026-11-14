@@ -1,3 +1,6 @@
+// Tests use a fixed fixture database, never the real shipped one.
+const FIXTURE_DB_PATH = require('path').join(__dirname, 'fixtures', 'fixture-threat-db.json');
+process.env.BTL_THREAT_DB_PATH = FIXTURE_DB_PATH;
 const { checkReputation, setDatabase, resetDatabase, getDatabaseStatus } = require('../src/background/reputation-engine.js');
 const localThreatDb = require('../src/shared/reputation/local-threat-db.js');
 const { computeHash, toHex } = require('../src/shared/reputation/hash-utils.js');
@@ -51,7 +54,7 @@ async function runTests() {
   };
 
   function reloadBundledDb() {
-    const dbPath = path.join(__dirname, '../src/data/bundled-threat-db.json');
+    const dbPath = FIXTURE_DB_PATH;
     const raw = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     setDatabase(raw);
   }
@@ -162,7 +165,7 @@ async function runTests() {
 
   // Fix 3: Startup race test — checkReputation awaits in-flight initialization
   resetDatabase();
-  const bundledDbData = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/data/bundled-threat-db.json'), 'utf8'));
+  const bundledDbData = JSON.parse(fs.readFileSync(FIXTURE_DB_PATH, 'utf8'));
   let loaderStarted = false;
   localThreatDb.ensureInitialized(() => {
     loaderStarted = true;

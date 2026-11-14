@@ -9,6 +9,9 @@
  *     explains private-address destinations.
  */
 const fs = require('fs');
+// Tests use a fixed fixture database, never the real shipped one.
+const FIXTURE_DB_PATH = require('path').join(__dirname, 'fixtures', 'fixture-threat-db.json');
+process.env.BTL_THREAT_DB_PATH = FIXTURE_DB_PATH;
 const vm = require('vm');
 const assert = require('assert');
 
@@ -126,7 +129,7 @@ runTest('EV-002: engine reports the database behind a confirmed threat', async (
 
 runTest('EV-003: bundled fixture database is labelled as a fixture', async () => {
   localThreatDb.resetDatabase();
-  const raw = JSON.parse(fs.readFileSync('./src/data/bundled-threat-db.json', 'utf8'));
+  const raw = JSON.parse(fs.readFileSync(FIXTURE_DB_PATH, 'utf8'));
   assert.ok(localThreatDb.loadDatabase(raw));
   const r = await reputationEngine.checkReputation('https://www.wikipedia.org/');
   assert.strictEqual(r.dbInfo.isFixture, true);

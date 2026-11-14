@@ -54,11 +54,12 @@ When live threat feed integration is authorized and access credentials are provi
    Download the permitted online URLhaus CSV feed (e.g., recent or full export) via authorized tools or authenticated cURL request:
    ```bash
    curl -H "Auth-Key: YOUR_URLHAUS_AUTH_KEY" https://urlhaus.abuse.ch/downloads/csv_recent/ -o data/urlhaus-recent.csv
+   # On Windows PowerShell use curl.exe (plain "curl" is a different command there)
    ```
 3. **Compile the Threat Database**:
    Run the offline feed compiler on the downloaded CSV:
    ```bash
-   node scripts/build-threat-feed.js --input data/urlhaus-recent.csv --output src/data/bundled-threat-db.json
+   node scripts/build-threat-feed.js --mode production --input data/urlhaus-recent.csv --output src/data/bundled-threat-db.json
    ```
    The compiler will detect that comments do not contain `fixture`/`synthetic` and will generate a production database with `"isFixture": false`.
 4. **Verify Hash Counts and File Budget**:

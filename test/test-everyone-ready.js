@@ -194,6 +194,20 @@ runTest('ER-012: every icon has the size in its name and a small file', () => {
   });
 });
 
+runTest('ER-013: the shipped threat database file is well formed and fits the size budget', () => {
+  const file = './src/data/bundled-threat-db.json';
+  assert.ok(fs.existsSync(file), 'src/data/bundled-threat-db.json must exist');
+  assert.ok(fs.statSync(file).size < 12 * 1024 * 1024, 'database must stay under 12 MB');
+  const db = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.strictEqual(db.formatVersion, 1);
+  assert.strictEqual(typeof db.source, 'string');
+  assert.strictEqual(typeof db.isFixture, 'boolean');
+  assert.ok(!isNaN(new Date(db.generatedAt).getTime()), 'generatedAt must be a valid date');
+  const keys = Object.keys(db.hashes);
+  assert.ok(keys.length > 0, 'database must not be empty');
+  keys.forEach(k => assert.ok(/^[0-9a-f]{64}$/.test(k), 'bad hash key ' + k));
+});
+
 (async () => {
   console.log('=== WORKS-FOR-EVERYONE TESTS ===');
   let passed = 0;

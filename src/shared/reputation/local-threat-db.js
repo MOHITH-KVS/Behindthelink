@@ -177,7 +177,8 @@
     try {
       const path = require('path');
       const fs = require('fs');
-      const bundledPath = path.join(__dirname, '../../data/bundled-threat-db.json');
+      // BTL_THREAT_DB_PATH lets tests use a fixed fixture database. It is never set in the extension.
+      const bundledPath = process.env.BTL_THREAT_DB_PATH || path.join(__dirname, '../../data/bundled-threat-db.json');
       if (fs.existsSync(bundledPath)) {
         const raw = fs.readFileSync(bundledPath, 'utf8');
         loadDatabase(JSON.parse(raw));

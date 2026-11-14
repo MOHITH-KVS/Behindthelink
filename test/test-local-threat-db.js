@@ -1,3 +1,6 @@
+// Tests use a fixed fixture database, never the real shipped one.
+const FIXTURE_DB_PATH = require('path').join(__dirname, 'fixtures', 'fixture-threat-db.json');
+process.env.BTL_THREAT_DB_PATH = FIXTURE_DB_PATH;
 /**
  * BehindTheLink — Phase 2A Local Threat Database Test Suite
  *
@@ -81,7 +84,7 @@ async function runTestSuite() {
 
   // Test 1: Bundled Database schema and file verification
   test("1. Bundled database schema and file integrity", () => {
-    const dbPath = path.join(__dirname, '../src/data/bundled-threat-db.json');
+    const dbPath = FIXTURE_DB_PATH;
     assert.ok(fs.existsSync(dbPath), "bundled-threat-db.json must exist");
     
     const content = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
@@ -114,7 +117,7 @@ async function runTestSuite() {
   await asyncTest("3. Path-specific threat fixture matches exact path only", async () => {
     // Re-verify database is loaded
     localThreatDb.resetDatabase();
-    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/data/bundled-threat-db.json'), 'utf8'));
+    const raw = JSON.parse(fs.readFileSync(FIXTURE_DB_PATH, 'utf8'));
     localThreatDb.loadDatabase(raw);
 
     // Exact path fixture: http://malware.test/payload.exe
@@ -218,7 +221,7 @@ async function runTestSuite() {
     assert.strictEqual(result.status, "REPUTATION_NO_MATCH", "Prefix collision alone MUST NEVER trigger a threat match");
 
     // Restore standard fixture database
-    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/data/bundled-threat-db.json'), 'utf8'));
+    const raw = JSON.parse(fs.readFileSync(FIXTURE_DB_PATH, 'utf8'));
     localThreatDb.loadDatabase(raw);
   });
 
@@ -266,7 +269,7 @@ async function runTestSuite() {
     assert.strictEqual(corruptRes.status, "REPUTATION_UNAVAILABLE", "Corrupted database must yield UNAVAILABLE");
 
     // Restore standard fixture database
-    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/data/bundled-threat-db.json'), 'utf8'));
+    const raw = JSON.parse(fs.readFileSync(FIXTURE_DB_PATH, 'utf8'));
     localThreatDb.loadDatabase(raw);
   });
 
@@ -346,7 +349,7 @@ async function runTestSuite() {
   // Test 15: Fix 1 — Independent checking of original and redirected URLs
   await asyncTest("15. Fix 1: Check original and redirected URLs independently", async () => {
     // Reload bundled DB
-    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/data/bundled-threat-db.json'), 'utf8'));
+    const raw = JSON.parse(fs.readFileSync(FIXTURE_DB_PATH, 'utf8'));
     localThreatDb.loadDatabase(raw);
     global.chrome.storage.local.get = (keys, cb) => cb({ reputationEnabled: true });
 
@@ -438,7 +441,7 @@ async function runTestSuite() {
     localThreatDb.resetDatabase();
     assert.strictEqual(localThreatDb.isReady(), false);
 
-    const bundledDbData = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/data/bundled-threat-db.json'), 'utf8'));
+    const bundledDbData = JSON.parse(fs.readFileSync(FIXTURE_DB_PATH, 'utf8'));
     let loaderCalled = false;
 
     // Simulate in-flight asynchronous database loading
@@ -466,7 +469,7 @@ async function runTestSuite() {
     assert.notStrictEqual(failResult.status, "REPUTATION_NO_MATCH", "Failed initialization must never claim URL is safe");
 
     // Restore database
-    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/data/bundled-threat-db.json'), 'utf8'));
+    const raw = JSON.parse(fs.readFileSync(FIXTURE_DB_PATH, 'utf8'));
     localThreatDb.loadDatabase(raw);
   });
 
@@ -578,7 +581,7 @@ async function runTestSuite() {
     assert.strictEqual(localThreatDb.loadDatabase(validFix), true, "Valid fixture metadata must be accepted");
 
     // Reload bundled database for remaining tests
-    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/data/bundled-threat-db.json'), 'utf8'));
+    const raw = JSON.parse(fs.readFileSync(FIXTURE_DB_PATH, 'utf8'));
     localThreatDb.loadDatabase(raw);
   });
 
@@ -649,7 +652,7 @@ async function runTestSuite() {
     assert.ok(!prodSignal.detail.includes('Synthetic test fixture'), "Production signal detail must not claim synthetic fixture");
 
     // Restore bundled database
-    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/data/bundled-threat-db.json'), 'utf8'));
+    const raw = JSON.parse(fs.readFileSync(FIXTURE_DB_PATH, 'utf8'));
     localThreatDb.loadDatabase(raw);
   });
 
